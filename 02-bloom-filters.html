@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bloom Filters</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/base.css">
+  <style>
+  /* page-specific styles */
+  .verdict {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin: 22px 0;
+    }
+  .verdict .card-v {
+      border-radius: 10px;
+      padding: 16px 20px;
+      border: 1px solid var(--line);
+    }
+  .verdict .yes { background: var(--accent-soft); }
+  .verdict .no { background: var(--teal-soft); }
+  .verdict .card-v .tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 6px;
+    }
+  .verdict .yes .tag { color: var(--accent); }
+  .verdict .no .tag { color: var(--teal); }
+  .verdict .card-v strong { font-family: 'Fraunces', serif; font-size: 18px; }
+  .verdict .card-v p { font-size: 16px; margin: 4px 0 0; }
+  .bit { fill: #f1ebdf; stroke: #c9c0ae; }
+  .bit-set { fill: #f6dca6; stroke: #b4541e; }
+  </style>
+<link rel="stylesheet" href="assets/nav.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 2</div>
+  <h1>Bloom Filters</h1>
+  <p class="lede">A tiny bit array that can tell you something is <em>definitely not</em> in a set, or <em>probably is</em> — using a fraction of the memory of storing the items themselves.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>You want to answer one cheap question over and over: <strong>"Is this item possibly in my set, or definitely not?"</strong> — using a small, fixed amount of memory no matter how many items you've added.</p>
+  <p>Why does the "definitely not" answer matter so much? Because it lets you <em>skip expensive work</em>. A database checks a Bloom filter before reading from disk: if it says "this key is definitely not in this file," the slow disk read is skipped entirely. A memory check is roughly 100,000× faster than a disk read, so avoiding even a fraction of those reads is a massive win.</p>
+  <div class="analogy">
+    <strong>Analogy:</strong> a nightclub bouncer with a bad memory but a clever stamp system. Instead of remembering every face, he presses a few overlapping rubber stamps onto each guest's hand on the way in. Later he can check a hand for those stamp marks. No marks where he'd expect them? You were <em>definitely</em> never stamped — you're not on the list. All the marks present? You're <em>probably</em> a guest… though by sheer luck another guest's stamps might have left the same marks.
+  </div>
+
+  <h2><span class="num">02</span>The core mechanism</h2>
+  <p>You keep one array of <code>m</code> bits, all starting at 0, plus <code>k</code> independent hash functions. Each hash function maps an item to a position in the array.</p>
+  <div class="steps">
+    <div class="step"><div class="body"><strong>Add an item:</strong> run it through all <code>k</code> hash functions to get <code>k</code> positions, and set those bits to 1.</div></div>
+    <div class="step"><div class="body"><strong>Test an item:</strong> hash it the same way and look at those <code>k</code> bits.</div></div>
+    <div class="step"><div class="body"><strong>Any bit is 0</strong> → the item is <em>definitely not</em> present. (If you'd added it, all <code>k</code> bits would be 1. A single zero is proof of absence.)</div></div>
+    <div class="step"><div class="body"><strong>All bits are 1</strong> → the item is <em>probably</em> present. You either added it, or other items happened to set those same bits. This is a false positive.</div></div>
+  </div>
+
+  <figure>
+    <svg width="520" height="170" viewBox="0 0 520 170" role="img" aria-label="Bloom filter bit array with apple setting bits 2, 6 and 9">
+      <rect x="220" y="8" width="80" height="30" rx="6" fill="#e9e1f5" stroke="#6a4fa3" stroke-width="1.5"/>
+      <text x="260" y="28" text-anchor="middle" font-family="JetBrains Mono" font-size="13" fill="#3f2d70">apple</text>
+      <line x1="252" y1="38" x2="120" y2="92" stroke="#b4541e" stroke-width="1.5"/>
+      <line x1="260" y1="38" x2="260" y2="92" stroke="#b4541e" stroke-width="1.5"/>
+      <line x1="268" y1="38" x2="400" y2="92" stroke="#b4541e" stroke-width="1.5"/>
+      <text x="260" y="58" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#6f675c">3 hash functions</text>
+      <!-- 12 cells, width 36, gap 4, start x=32 -->
+      <g font-family="JetBrains Mono" font-size="13" fill="#2b2722" text-anchor="middle">
+        <rect class="bit"     x="32"  y="92" width="36" height="36" rx="5"/><text x="50"  y="115">0</text>
+        <rect class="bit"     x="72"  y="92" width="36" height="36" rx="5"/><text x="90"  y="115">0</text>
+        <rect class="bit-set" x="112" y="92" width="36" height="36" rx="5"/><text x="130" y="115">1</text>
+        <rect class="bit"     x="152" y="92" width="36" height="36" rx="5"/><text x="170" y="115">0</text>
+        <rect class="bit"     x="192" y="92" width="36" height="36" rx="5"/><text x="210" y="115">0</text>
+        <rect class="bit"     x="232" y="92" width="36" height="36" rx="5"/><text x="250" y="115">0</text>
+        <rect class="bit-set" x="272" y="92" width="36" height="36" rx="5"/><text x="290" y="115">1</text>
+        <rect class="bit"     x="312" y="92" width="36" height="36" rx="5"/><text x="330" y="115">0</text>
+        <rect class="bit"     x="352" y="92" width="36" height="36" rx="5"/><text x="370" y="115">0</text>
+        <rect class="bit-set" x="392" y="92" width="36" height="36" rx="5"/><text x="410" y="115">1</text>
+        <rect class="bit"     x="432" y="92" width="36" height="36" rx="5"/><text x="450" y="115">0</text>
+        <rect class="bit"     x="472" y="92" width="36" height="36" rx="5"/><text x="490" y="115">0</text>
+      </g>
+      <g font-family="JetBrains Mono" font-size="10" fill="#6f675c" text-anchor="middle">
+        <text x="50" y="146">0</text><text x="90" y="146">1</text><text x="130" y="146">2</text>
+        <text x="170" y="146">3</text><text x="210" y="146">4</text><text x="250" y="146">5</text>
+        <text x="290" y="146">6</text><text x="330" y="146">7</text><text x="370" y="146">8</text>
+        <text x="410" y="146">9</text><text x="450" y="146">10</text><text x="490" y="146">11</text>
+      </g>
+      <text x="260" y="164" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#6f675c">"apple" set bits 2, 6, 9 — to test it later, check those same bits</text>
+    </svg>
+    <figcaption>One bit array, three hash functions. Adding "apple" lights up three bits.</figcaption>
+  </figure>
+
+  <div class="verdict">
+    <div class="card-v no">
+      <span class="tag">guaranteed</span>
+      <strong>No false negatives</strong>
+      <p>It never says "not here" about something that <em>is</em> here. A "definitely not" is always trustworthy.</p>
+    </div>
+    <div class="card-v yes">
+      <span class="tag">accepted cost</span>
+      <strong>Possible false positives</strong>
+      <p>It occasionally says "probably here" about something that isn't. You tune how often this happens.</p>
+    </div>
+  </div>
+  <p>That asymmetry is the entire point. The error only ever happens in the <em>safe</em> direction: a "maybe" just makes you do the work you'd have done anyway — you're never wrong in a way that loses data.</p>
+
+  <h2><span class="num">03</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Bit array <span class="pron">(size m)</span></dt>
+      <dd>The fixed block of <code>m</code> bits that <em>is</em> the filter. It never grows as you add items — only more bits flip from 0 to 1.
+      <span class="so-what">Why it matters: memory is decided up front and stays flat. That predictability is why it scales to billions of items.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Hash functions <span class="pron">(count k)</span></dt>
+      <dd>The <code>k</code> independent functions that each map an item to one position. In practice they're often derived cheaply from two base hashes rather than computing <code>k</code> separate ones.
+      <span class="so-what">Why it matters: <code>k</code> is a dial. Too few and bits aren't distinctive; too many and the array fills up fast. There's a sweet spot.</span></dd>
+    </div>
+    <div class="term">
+      <dt>False positive rate <span class="pron">(FPR)</span></dt>
+      <dd>The probability the filter says "probably present" for an item you never added. Approximately <code>(1 − e^(−kn/m))^k</code>, where <code>n</code> is the number of items added.
+      <span class="so-what">Why it matters: this is the knob you actually care about. More bits per item drives it down; it's how you trade memory for accuracy.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Bits per item <span class="pron">(m / n)</span></dt>
+      <dd>How much room each item gets. A common tuning is ~10 bits per item with <code>k ≈ 7</code>, giving roughly a 1% false-positive rate.
+      <span class="so-what">Why it matters: ~10 bits ≈ 1.25 bytes can stand in for a multi-kilobyte row. That compression is the whole appeal.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Optimal k</dt>
+      <dd>For a chosen size and item count, the false-positive rate is minimized at <code>k = (m / n) × ln 2</code>.
+      <span class="so-what">Why it matters: you don't guess the number of hash functions — once you pick a size and expected load, the best <code>k</code> falls out of a formula.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Counting Bloom filter</dt>
+      <dd>A variant where each slot is a small counter instead of a single bit: add increments, delete decrements.
+      <span class="so-what">Why it matters: it's the standard way to make deletion safe (see the limitation below), at the cost of extra memory per slot.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">04</span>The two big limitations</h2>
+  <div class="pitfall"><strong>You can't delete (in the basic version).</strong> Clearing an item's bits might clear a bit another item relies on — which would create a false <em>negative</em>, the one error a Bloom filter promises never to make. The fix is the counting Bloom filter.</div>
+  <div class="pitfall"><strong>You can't read anything back.</strong> It only answers yes/no membership. You can't list its contents or retrieve a value. It's a gatekeeper, not a container.</div>
+  <div class="pitfall"><strong>Accuracy degrades as it fills.</strong> Add far more items than you sized it for and the false-positive rate climbs toward useless. Size it for your expected load, or use a scalable variant.</div>
+
+  <h2><span class="num">05</span>Where it's used</h2>
+  <table>
+    <tr><th>System</th><th>How it uses the idea</th></tr>
+    <tr><td>Cassandra / RocksDB / LevelDB</td><td>Each on-disk SSTable has a Bloom filter; a "definitely not" lets the engine skip reading that file when looking up a key.</td></tr>
+    <tr><td>CDNs &amp; caches</td><td>"One-hit-wonder" filtering — only cache an object on its <em>second</em> request, so single-access junk never pollutes the cache.</td></tr>
+    <tr><td>Browsers / security</td><td>Early Google Safe Browsing checked URLs against a local malware-list filter before making any network call.</td></tr>
+    <tr><td>Distributed systems</td><td>Summarize "which keys do I hold?" to a peer compactly, without shipping the entire key set.</td></tr>
+  </table>
+
+  <h2><span class="num">06</span>Cousins worth knowing</h2>
+  <table>
+    <tr><th>Structure</th><th>What's different</th></tr>
+    <tr><td>Cuckoo filter</td><td>Supports deletion and often uses less space at low false-positive rates.</td></tr>
+    <tr><td>Scalable Bloom filter</td><td>Grows automatically when you exceed the item count you planned for.</td></tr>
+    <tr><td>HyperLogLog</td><td>Answers a different question — <em>how many distinct</em> items, not membership — with similarly tiny memory.</td></tr>
+  </table>
+
+  <h2><span class="num">07</span>Common confusions</h2>
+  <div class="pitfall"><strong>"Probably present" is not "present."</strong> An all-ones result is a hint, not a confirmation. If you need certainty, the filter only saves you the lookups it rules out.</div>
+  <div class="pitfall"><strong>It doesn't store the items.</strong> There's no way to recover what was added — only bits are kept, and many items can share the same bits.</div>
+
+  <h2><span class="num">08</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">A Bloom filter is a small bit array plus a few hash functions that tells you an item is <em>definitely not</em> in a set or <em>probably is</em> — trading a controllable false-positive rate for enormous memory savings.</p>
+
+  <div class="footer-note">day 2 / bloom filters · previously: consistent hashing · next up: say "today's topic" tomorrow</div>
+
+</div>
+<script src="assets/topics.js"></script>
+<script src="assets/nav.js"></script>
+</body>
+</html>

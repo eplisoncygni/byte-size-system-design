@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LSM Trees</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/nav.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 5</div>
+  <h1>LSM Trees</h1>
+  <p class="lede">The write-optimized storage engine inside Cassandra, RocksDB, and LevelDB — where every write is an append, and Bloom filters, sorted files, and background merging keep reads viable.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>You need a storage engine that can absorb an enormous volume of writes. The classic design — a B-tree — keeps rows sorted in pages on disk and updates them <em>in place</em>: find the page, modify it, write it back. Every write becomes a random disk I/O, the slowest pattern storage offers.</p>
+  <p>The LSM (Log-Structured Merge) tree asks: what if we <strong>never update anything in place</strong>? Every insert, update, and delete becomes an append or a new file — sequential I/O everywhere. The price is paid on the read side, and most of the design is machinery for keeping that price low.</p>
+  <div class="analogy">
+    <strong>Analogy:</strong> a busy clinic's paper records. Instead of finding each patient's folder mid-rush to scribble updates (slow, error-prone), the receptionist keeps one running notepad of today's visits, sorted by name. When the notepad fills, it's photocopied into the archive as a sealed, sorted binder — never edited again. A patient's current status = check the notepad first, then binders newest-to-oldest, stop at first mention. Periodically someone merges old binders, keeping only each patient's latest entry and discarding the dead weight. Notepad = memtable, binders = SSTables, merging = compaction.
+  </div>
+
+  <h2><span class="num">02</span>The write path</h2>
+  <div class="steps">
+    <div class="step"><div class="body"><strong>Append to the commit log</strong> (the WAL from Day 4) — durable, sequential, fsync'd. This is what makes the write crash-safe.</div></div>
+    <div class="step"><div class="body"><strong>Insert into the memtable</strong> — an in-memory sorted structure (skip list or red-black tree) holding recent writes ordered by key. Write acknowledged. No disk seek ever happened.</div></div>
+    <div class="step"><div class="body"><strong>When the memtable fills</strong> (e.g. 64 MB), <strong>flush</strong> it: stream it to disk as an <em>SSTable</em> — an immutable, sorted-by-key file. One sequential write.</div></div>
+    <div class="step"><div class="body"><strong>Recycle the commit-log segment.</strong> Its job was protecting the unflushed memtable; once flushed, it's no longer needed.</div></div>
+  </div>
+
+  <figure>
+    <svg width="640" height="360" viewBox="0 0 680 360" role="img" aria-label="LSM tree write path and structure">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M1 1 L9 5 L1 9" fill="none" stroke="#b4541e" stroke-width="1.6" stroke-linecap="round"/>
+        </marker>
+        <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M1 1 L9 5 L1 9" fill="none" stroke="#9aa39a" stroke-width="1.4" stroke-linecap="round"/>
+        </marker>
+      </defs>
+
+      <rect class="d-box" x="30" y="30" width="120" height="44" rx="9"/>
+      <text class="d-label" x="90" y="56" text-anchor="middle">write</text>
+
+      <line class="d-arrow" x1="150" y1="44" x2="228" y2="44" marker-end="url(#ah)"/>
+      <text class="d-small" x="189" y="34" text-anchor="middle">1. append</text>
+
+      <rect class="d-log" x="232" y="22" width="200" height="44" rx="9"/>
+      <text class="d-label" x="332" y="42" text-anchor="middle">commit log (WAL)</text>
+      <text class="d-small" x="332" y="58" text-anchor="middle">sequential · fsync</text>
+
+      <line class="d-arrow" x1="150" y1="58" x2="228" y2="104" marker-end="url(#ah)"/>
+      <text class="d-small" x="160" y="92" text-anchor="middle">2. insert</text>
+
+      <rect class="d-mem" x="232" y="86" width="200" height="50" rx="9"/>
+      <text class="d-label" x="332" y="106" text-anchor="middle">memtable (memory)</text>
+      <text class="d-small" x="332" y="124" text-anchor="middle">sorted by key · skip list</text>
+
+      <line class="d-arrow-soft" x1="332" y1="136" x2="332" y2="182" marker-end="url(#ah2)"/>
+      <text class="d-small" x="412" y="162" text-anchor="middle">3. flush when full</text>
+
+      <rect class="d-data" x="232" y="186" width="200" height="40" rx="9"/>
+      <text class="d-label" x="332" y="211" text-anchor="middle">SSTable (newest)</text>
+      <rect class="d-data" x="232" y="236" width="200" height="40" rx="9"/>
+      <text class="d-label" x="332" y="261" text-anchor="middle">SSTable</text>
+      <rect class="d-data" x="232" y="286" width="200" height="40" rx="9"/>
+      <text class="d-label" x="332" y="311" text-anchor="middle">SSTable (oldest)</text>
+
+      <text class="d-small" x="540" y="206" text-anchor="middle">immutable, sorted files —</text>
+      <text class="d-small" x="540" y="222" text-anchor="middle">each with a Bloom filter</text>
+      <text class="d-small" x="540" y="238" text-anchor="middle">+ sparse index</text>
+
+      <line class="d-arrow-soft" x1="480" y1="280" x2="480" y2="320"/>
+      <text class="d-small" x="545" y="296" text-anchor="middle">compaction merges these</text>
+      <text class="d-small" x="545" y="312" text-anchor="middle">and drops dead data</text>
+
+      <text class="d-small" x="115" y="226" text-anchor="middle">reads: memtable first,</text>
+      <text class="d-small" x="115" y="242" text-anchor="middle">then SSTables</text>
+      <text class="d-small" x="115" y="258" text-anchor="middle">newest → oldest,</text>
+      <text class="d-small" x="115" y="274" text-anchor="middle">Bloom filter per file</text>
+
+      <text class="d-small" x="340" y="350" text-anchor="middle">Everything on the write path is sequential. The random-I/O work is deferred to background compaction.</text>
+    </svg>
+    <figcaption>Writes hit the log and memory; sorted immutable files accumulate below; compaction tidies in the background.</figcaption>
+  </figure>
+
+  <p><strong>Updates and deletes never touch old data.</strong> An update just writes the new version somewhere newer; the old version is <em>shadowed</em>. A delete writes a <strong>tombstone</strong> — a marker meaning "this key is dead." The newest entry always wins.</p>
+
+  <h2><span class="num">03</span>The read path — where the bill is paid</h2>
+  <p>A key's latest value could be in the memtable or in any SSTable. A read checks the <strong>memtable first</strong>, then SSTables <strong>newest to oldest</strong>, stopping at the first hit.</p>
+  <p>Consulting every file would be brutal — and this is exactly why <em>every SSTable carries a Bloom filter</em> (Day 2). "Definitely not in this file" → skip it entirely, no disk touched. "Maybe" → use the file's <strong>sparse index</strong> (the data is sorted, so an in-memory index of every Nth key plus a short scan finds the spot) to read it.</p>
+
+  <h2><span class="num">04</span>Compaction — the merge in "merge tree"</h2>
+  <p>Left alone, SSTables pile up: reads consult ever more files, and dead data (shadowed versions, tombstoned keys) wastes space. <strong>Compaction</strong> runs in the background: pick several SSTables, k-way merge them (each is already sorted — this is merge sort's merge step), keep only each key's newest version, physically discard tombstoned data, write fresh consolidated SSTables, delete the old ones.</p>
+  <table>
+    <tr><th>Strategy</th><th>Idea</th><th>Trade</th></tr>
+    <tr><td>Size-tiered</td><td>Merge similar-sized SSTables together when enough accumulate.</td><td>Write-friendly; worse space &amp; read amplification.</td></tr>
+    <tr><td>Leveled</td><td>Organize SSTables into levels with non-overlapping key ranges; each level ~10× the last.</td><td>Read- &amp; space-friendly; more write amplification.</td></tr>
+  </table>
+
+  <h2><span class="num">05</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Memtable</dt>
+      <dd>The in-memory sorted structure (skip list / red-black tree) absorbing all incoming writes, protected by the commit log.
+      <span class="so-what">Why it matters: it's why writes need no disk seek — and why it must be sorted: so the flush can stream out an already-sorted file.</span></dd>
+    </div>
+    <div class="term">
+      <dt>SSTable <span class="pron">(Sorted String Table)</span></dt>
+      <dd>An immutable on-disk file of key-value pairs sorted by key, written once at flush or compaction, never edited.
+      <span class="so-what">Why it matters: immutability means no in-place corruption risk and sequential-only writes; sortedness enables sparse indexes and cheap merging.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Tombstone</dt>
+      <dd>A special record meaning "this key was deleted," written like any other entry.
+      <span class="so-what">Why it matters: you can't erase from immutable files — deletion must be an append. Tombstones must persist long enough (Cassandra: gc_grace_seconds) or deleted data can resurrect from older files/replicas.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Flush</dt>
+      <dd>Streaming a full memtable to disk as a new SSTable, then recycling its commit-log segment.
+      <span class="so-what">Why it matters: it's the moment memory becomes durable file — one big sequential write instead of thousands of random ones.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Compaction</dt>
+      <dd>Background merging of SSTables: newest version of each key survives, shadowed data and expired tombstones are dropped.
+      <span class="so-what">Why it matters: it's what keeps reads and disk usage bounded. Without it the engine slowly drowns in its own files.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Write / read / space amplification</dt>
+      <dd>The three overheads: each logical write is rewritten several times (WAL, flush, compactions); each read may consult several files; disk holds dead data awaiting compaction.
+      <span class="so-what">Why it matters: every LSM tuning decision trades these against each other — you can't minimize all three at once.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Sparse index</dt>
+      <dd>An in-memory index of every Nth key in an SSTable; sortedness lets a binary search + short scan find any key.
+      <span class="so-what">Why it matters: full indexes for every key would be huge. Sortedness buys tiny indexes — one more payoff of keeping things sorted.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">06</span>LSM vs. B-tree</h2>
+  <table>
+    <tr><th></th><th>LSM tree</th><th>B-tree</th></tr>
+    <tr><td>Writes</td><td>Sequential appends — very fast, high throughput.</td><td>In-place page updates — random I/O, slower.</td></tr>
+    <tr><td>Reads</td><td>Multiple files possible; mitigated by Bloom filters + compaction.</td><td>One tree walk to one page — fast, predictable.</td></tr>
+    <tr><td>Best for</td><td>Write-heavy: metrics, events, logs, messaging.</td><td>Read-heavy, transactional point lookups.</td></tr>
+    <tr><td>Used by</td><td>Cassandra, RocksDB, LevelDB, HBase, ScyllaDB.</td><td>PostgreSQL, MySQL (InnoDB), SQLite, Oracle.</td></tr>
+  </table>
+
+  <h2><span class="num">07</span>Common confusions</h2>
+  <div class="pitfall"><strong>It's not a tree like a B-tree is a tree.</strong> There's no single pointer-linked tree structure; "tree" refers to the leveled arrangement of files being merged. Don't picture nodes and pointers — picture sorted files stacked by age.</div>
+  <div class="pitfall"><strong>Deletes make data bigger before smaller.</strong> A delete is a write (the tombstone). The space comes back only at compaction — and mass-deletion workloads can drown in tombstones (a classic Cassandra incident pattern).</div>
+  <div class="pitfall"><strong>An update doesn't replace anything.</strong> Old versions physically remain until compaction; the engine just always finds the newest first. "Newest wins" is a read-time rule, not a write-time overwrite.</div>
+  <div class="pitfall"><strong>The WAL and the SSTables are different logs.</strong> The commit log is a short-lived crash-recovery journal (Day 4); SSTables are the long-lived data. Both append-only, different jobs.</div>
+
+  <h2><span class="num">08</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">An LSM tree turns every write into an append — WAL-protected memtable, flushed to immutable sorted files — then uses Bloom filters to keep reads viable and background compaction to merge files and discard dead data, trading read and space overhead for exceptional write throughput.</p>
+
+  <div class="footer-note">day 5 / lsm trees · previously: consistent hashing, bloom filters, merkle trees, write-ahead logging · next up: say "today's topic" tomorrow</div>
+
+</div>
+<script src="assets/topics.js"></script>
+<script src="assets/nav.js"></script>
+</body>
+</html>

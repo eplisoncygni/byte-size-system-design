@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Merkle Trees</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/base.css">
+  <style>
+  /* page-specific styles */
+  /* diagram node fills */
+    .n-root  { fill: #f6dca6; stroke: #b4541e; }
+  .n-hash  { fill: #e9e1f5; stroke: #6a4fa3; }
+  .n-block { fill: #eef0ee; stroke: #9aa39a; }
+  .n-changed { fill: #f4c9b6; stroke: #b4541e; }
+  .edge { stroke: #c9c0ae; stroke-width: 1.2; }
+  .edge-changed { stroke: #b4541e; stroke-width: 2; }
+  .nlabel { font-family: 'JetBrains Mono', monospace; font-size: 13px; fill: #2b2722; }
+  .nlabel-root { font-family: 'JetBrains Mono', monospace; font-size: 13px; fill: #7a3a12; }
+  .caption-svg { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #6f675c; }
+  </style>
+<link rel="stylesheet" href="assets/nav.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 3</div>
+  <h1>Merkle Trees</h1>
+  <p class="lede">A tree of hashes that lets one small value verify a whole dataset — and lets two copies find their differences without shipping everything.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>You have the same data in two places: two database replicas, your laptop and a git remote, a downloaded file and the original. Two questions come up constantly — <strong>"Are these identical?"</strong> and, if not, <strong>"Which parts differ?"</strong></p>
+  <p>The naive answer is to send everything and compare byte by byte. For gigabytes across a network, that's brutally expensive. A Merkle tree answers both questions while moving only a tiny number of hashes.</p>
+  <div class="analogy">
+    <strong>Analogy:</strong> think of a company org chart, but for trust. Each employee reports a one-line summary to their manager; each manager summarizes their reports up to <em>their</em> manager; the CEO holds one summary of the whole company. If anything changes anywhere on the floor, the change ripples up and the CEO's summary changes too. And to prove one employee's status to an outsider, you don't reveal the whole company — just that person plus the handful of summaries along the chain up to the CEO.
+  </div>
+
+  <h2><span class="num">02</span>The core mechanism</h2>
+  <p>Build a tree of hashes on top of your data:</p>
+  <div class="steps">
+    <div class="step"><div class="body"><strong>Chop the data into blocks</strong> and hash each one. These hashes are the <em>leaves</em>.</div></div>
+    <div class="step"><div class="body"><strong>Hash each pair of leaves together</strong> to form their parent node.</div></div>
+    <div class="step"><div class="body"><strong>Keep hashing pairs upward</strong> — parents into grandparents — until a single hash remains.</div></div>
+    <div class="step"><div class="body"><strong>That top value is the root hash</strong> (the "Merkle root"): a fingerprint of the entire dataset.</div></div>
+  </div>
+
+  <figure>
+    <svg width="640" height="400" viewBox="0 0 680 400" role="img" aria-label="A Merkle tree over four data blocks">
+      <line class="edge" x1="340" y1="74" x2="175" y2="140"/>
+      <line class="edge" x1="340" y1="74" x2="505" y2="140"/>
+      <line class="edge" x1="175" y1="180" x2="100" y2="240"/>
+      <line class="edge" x1="175" y1="180" x2="250" y2="240"/>
+      <line class="edge" x1="505" y1="180" x2="430" y2="240"/>
+      <line class="edge" x1="505" y1="180" x2="580" y2="240"/>
+      <line class="edge" x1="100" y1="278" x2="100" y2="330" stroke-dasharray="3 3"/>
+      <line class="edge" x1="250" y1="278" x2="250" y2="330" stroke-dasharray="3 3"/>
+      <line class="edge" x1="430" y1="278" x2="430" y2="330" stroke-dasharray="3 3"/>
+      <line class="edge" x1="580" y1="278" x2="580" y2="330" stroke-dasharray="3 3"/>
+
+      <rect class="n-root" x="275" y="30" width="130" height="44" rx="9"/>
+      <text class="nlabel-root" x="340" y="56" text-anchor="middle">Root hash</text>
+
+      <rect class="n-hash" x="120" y="140" width="110" height="40" rx="8"/>
+      <text class="nlabel" x="175" y="165" text-anchor="middle">H(AB)</text>
+      <rect class="n-hash" x="450" y="140" width="110" height="40" rx="8"/>
+      <text class="nlabel" x="505" y="165" text-anchor="middle">H(CD)</text>
+
+      <rect class="n-hash" x="58" y="240" width="84" height="38" rx="8"/>
+      <text class="nlabel" x="100" y="264" text-anchor="middle">H(A)</text>
+      <rect class="n-hash" x="208" y="240" width="84" height="38" rx="8"/>
+      <text class="nlabel" x="250" y="264" text-anchor="middle">H(B)</text>
+      <rect class="n-hash" x="388" y="240" width="84" height="38" rx="8"/>
+      <text class="nlabel" x="430" y="264" text-anchor="middle">H(C)</text>
+      <rect class="n-hash" x="538" y="240" width="84" height="38" rx="8"/>
+      <text class="nlabel" x="580" y="264" text-anchor="middle">H(D)</text>
+
+      <rect class="n-block" x="58" y="330" width="84" height="36" rx="6"/>
+      <text class="nlabel" x="100" y="353" text-anchor="middle">block A</text>
+      <rect class="n-block" x="208" y="330" width="84" height="36" rx="6"/>
+      <text class="nlabel" x="250" y="353" text-anchor="middle">block B</text>
+      <rect class="n-block" x="388" y="330" width="84" height="36" rx="6"/>
+      <text class="nlabel" x="430" y="353" text-anchor="middle">block C</text>
+      <rect class="n-block" x="538" y="330" width="84" height="36" rx="6"/>
+      <text class="nlabel" x="580" y="353" text-anchor="middle">block D</text>
+
+      <text class="caption-svg" x="340" y="392" text-anchor="middle">Each parent = hash of its children. The root is a single fingerprint of all four blocks.</text>
+    </svg>
+    <figcaption>Data at the bottom, hashes folding upward to one root.</figcaption>
+  </figure>
+
+  <h2><span class="num">03</span>The two superpowers</h2>
+  <p><strong>1. The root detects any change, anywhere.</strong> Every hash feeds its parent, so flipping a single bit in <code>block C</code> changes <code>H(C)</code> → <code>H(CD)</code> → the root. Two datasets are identical <em>if and only if</em> their roots match. One comparison certifies the whole thing. (This is how git knows a commit is intact and how ZFS catches silent disk corruption.)</p>
+  <p><strong>2. Prove or locate things in O(log n), not O(n).</strong></p>
+  <p><em>Merkle proof (authentication path):</em> to prove <code>block C</code> is authentic to someone who holds only the trusted root, you send <code>block C</code> plus the <em>sibling hashes</em> on the path up: <code>H(D)</code> and <code>H(AB)</code>. They recompute <code>H(C)</code> → combine with <code>H(D)</code> → <code>H(CD)</code> → combine with <code>H(AB)</code> → a root, and check it matches. Three values verify one block out of millions.</p>
+  <p><em>Tree diff (anti-entropy):</em> to compare two replicas, compare roots. Equal → identical, done. Different → compare children and descend <em>only</em> into subtrees whose hashes disagree. You pinpoint the differing blocks in logarithmic traffic instead of streaming everything.</p>
+
+  <h2><span class="num">04</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Leaf hash</dt>
+      <dd>The hash of one data block — the bottom layer of the tree.
+      <span class="so-what">Why it matters: the data itself never goes into the tree, only its hash. The tree is tiny compared to the data it guards.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Root hash <span class="pron">(Merkle root)</span></dt>
+      <dd>The single hash at the top, computed from everything below it.
+      <span class="so-what">Why it matters: it's the one value you publish or trust. Matching roots = identical data; that's the whole verification in one comparison.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Merkle proof <span class="pron">(authentication path)</span></dt>
+      <dd>The set of sibling hashes along the path from a leaf to the root — everything needed to recompute the root from one block.
+      <span class="so-what">Why it matters: it's O(log n) values, so you can prove membership without holding the dataset. This powers blockchain light clients and Certificate Transparency.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Cryptographic hash</dt>
+      <dd>A collision-resistant hash (e.g. SHA-256) — it must be infeasible to find two inputs with the same output.
+      <span class="so-what">Why it matters: the entire security rests on this. A weak hash (like MD5) lets an attacker forge a block with a matching hash and break the tree.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Anti-entropy / repair</dt>
+      <dd>Background reconciliation where replicas exchange Merkle trees to find and fix divergent data.
+      <span class="so-what">Why it matters: this is the day-job use in Cassandra and DynamoDB — cheap detection of which partitions need syncing.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Domain separation</dt>
+      <dd>Prefixing leaf hashes and internal hashes with different bytes (e.g. <code>0x00</code> vs <code>0x01</code>) so they can never be confused.
+      <span class="so-what">Why it matters: without it, an attacker can pass an internal node off as a leaf — the "second-preimage" attack. It's the standard fix.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">05</span>What happens when one block changes</h2>
+  <div class="steps">
+    <div class="step"><div class="body"><strong>Edit <code>block C</code>.</strong> Even a single bit.</div></div>
+    <div class="step"><div class="body"><strong><code>H(C)</code> changes</strong> — a cryptographic hash produces a completely different output.</div></div>
+    <div class="step"><div class="body"><strong>The change ripples up:</strong> <code>H(CD)</code> changes, then the root changes.</div></div>
+    <div class="step"><div class="body"><strong>Only the C path moved.</strong> <code>H(A)</code>, <code>H(B)</code>, <code>H(AB)</code> are untouched — so a diff descends straight to C and ignores the rest.</div></div>
+  </div>
+
+  <h2><span class="num">06</span>Where it's used</h2>
+  <table>
+    <tr><th>System</th><th>How it uses the idea</th></tr>
+    <tr><td>Git</td><td>Every commit references a tree of file/directory hashes; comparing roots instantly reveals which files changed.</td></tr>
+    <tr><td>Bitcoin &amp; blockchains</td><td>Transactions in a block roll up to a Merkle root in the header; light clients verify a transaction with an O(log n) proof (SPV).</td></tr>
+    <tr><td>IPFS / content addressing</td><td>The hash <em>is</em> the address; data is a Merkle DAG, so identical content dedupes automatically.</td></tr>
+    <tr><td>Cassandra / DynamoDB</td><td>Replicas swap Merkle trees during repair to locate divergent partitions cheaply.</td></tr>
+    <tr><td>Certificate Transparency</td><td>Proves a TLS certificate was appended to a public, tamper-evident log.</td></tr>
+    <tr><td>ZFS / Btrfs, BitTorrent</td><td>Per-block hashes detect corruption and verify downloaded pieces.</td></tr>
+  </table>
+
+  <h2><span class="num">07</span>Common confusions</h2>
+  <div class="pitfall"><strong>It uses a <em>cryptographic</em> hash, unlike a hash ring or Bloom filter.</strong> Those tolerate weak, fast hashes; a Merkle tree's guarantees collapse if collisions are findable.</div>
+  <div class="pitfall"><strong>A Merkle proof doesn't reveal the other data.</strong> You learn that a block is included and authentic — not the contents of its siblings. Only their hashes travel.</div>
+  <div class="pitfall"><strong>The leftover (odd) node needs a rule.</strong> Duplicating or promoting the last node is a real design choice — Bitcoin's duplication caused a historical vulnerability (CVE-2012-2459).</div>
+
+  <h2><span class="num">08</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">A Merkle tree hashes data in pairs up to a single root, so one comparison verifies a whole dataset, and any block can be proven authentic — or any difference between two copies located — with only a logarithmic number of hashes.</p>
+
+  <div class="footer-note">day 3 / merkle trees · previously: consistent hashing, bloom filters · next up: say "today's topic" tomorrow</div>
+
+</div>
+<script src="assets/topics.js"></script>
+<script src="assets/nav.js"></script>
+</body>
+</html>

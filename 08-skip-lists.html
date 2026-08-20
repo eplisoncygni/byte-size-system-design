@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skip Lists</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/base.css">
+  <style>
+  /* page-specific styles */
+  /* diagram styles */
+    .sl-node   { fill: #e9e1f5; stroke: #6a4fa3; stroke-width: 1.4; }
+  .sl-target { fill: #f6dca6; stroke: #b4541e; stroke-width: 2; }
+  .sl-head   { fill: #e0efe9; stroke: #1d6f5c; stroke-width: 1.4; }
+  .sl-label  { font-family: 'JetBrains Mono', monospace; font-size: 13px; fill: #2b2722; }
+  .sl-lvl    { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #6f675c; }
+  .sl-link   { stroke: #9aa39a; stroke-width: 1.4; fill: none; }
+  .sl-path   { stroke: #b4541e; stroke-width: 2.4; fill: none; }
+  </style>
+<link rel="stylesheet" href="assets/nav.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 8</div>
+  <h1>Skip Lists</h1>
+  <p class="lede">A stack of sorted linked lists where each level up is a random, sparser "express lane" — giving balanced-tree speed from coin flips instead of rotations.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>You want a sorted collection with fast search, insert, and delete — O(log n) for all three, the guarantee a balanced binary search tree gives. The catch with balanced BSTs (AVL, red-black) is that <em>maintaining</em> balance is fiddly: inserts and deletes trigger rotations and recoloring, notoriously bug-prone to implement.</p>
+  <p>The skip list asks: <strong>can we get O(log n) sorted operations without any rebalancing machinery?</strong> The surprising answer is yes — using randomness instead of rotations.</p>
+  <div class="analogy">
+    <strong>Analogy:</strong> a subway system. The bottom level is the <em>local</em> train — it stops at every single station. The levels above are <em>express</em> trains that stop only at major stations, skipping the ones between. To travel far, you ride the express as far as it goes without overshooting your stop, then transfer down to the local for the last few stations. Few hops to cover a big distance, then precision at the end.
+  </div>
+
+  <h2><span class="num">02</span>Why the simple options fail</h2>
+  <table>
+    <tr><th>Structure</th><th>Search</th><th>Insert</th><th>Problem</th></tr>
+    <tr><td>Sorted linked list</td><td>O(n)</td><td>O(1) splice</td><td>Cheap to splice, but no way to jump — you walk node by node.</td></tr>
+    <tr><td>Sorted array</td><td>O(log n)</td><td>O(n)</td><td>Binary search is fast, but inserting shifts everything.</td></tr>
+    <tr><td>Skip list</td><td>O(log n)*</td><td>O(log n)*</td><td>The linked list's cheap splicing <em>and</em> the array's fast search. (*expected)</td></tr>
+  </table>
+
+  <h2><span class="num">03</span>The core idea — express lanes</h2>
+  <p>Take a sorted linked list (level 0 — it holds <em>every</em> element). Build a sparser list above it (level 1) with only some elements, whose pointers skip over the ones between. Build a sparser one above that, and so on. Higher levels are express lanes: cover big distances in few hops, then drop down for precision.</p>
+
+  <figure>
+    <svg width="640" height="260" viewBox="0 0 660 260" role="img" aria-label="A skip list with three levels and the search path to value 46">
+      <!-- level y positions: L2=50, L1=120, L0=190 -->
+      <text class="sl-lvl" x="20" y="54" text-anchor="start">L2</text>
+      <text class="sl-lvl" x="20" y="124" text-anchor="start">L1</text>
+      <text class="sl-lvl" x="20" y="194" text-anchor="start">L0</text>
+
+      <!-- node x positions: head=60, 12=140, 25=230, 31=320, 46=410, 58=500, 70=590 -->
+      <!-- LEVEL 0 links (all nodes) -->
+      <line class="sl-link" x1="72" y1="190" x2="128" y2="190"/>
+      <line class="sl-link" x1="152" y1="190" x2="218" y2="190"/>
+      <line class="sl-link" x1="242" y1="190" x2="308" y2="190"/>
+      <line class="sl-link" x1="332" y1="190" x2="398" y2="190"/>
+      <line class="sl-link" x1="422" y1="190" x2="488" y2="190"/>
+      <line class="sl-link" x1="512" y1="190" x2="578" y2="190"/>
+
+      <!-- LEVEL 1 links (12, 31, 58) -->
+      <line class="sl-link" x1="72" y1="120" x2="128" y2="120"/>
+      <line class="sl-link" x1="152" y1="120" x2="308" y2="120"/>
+      <line class="sl-link" x1="332" y1="120" x2="488" y2="120"/>
+
+      <!-- LEVEL 2 links (31 only) -->
+      <line class="sl-link" x1="72" y1="50" x2="308" y2="50"/>
+
+      <!-- SEARCH PATH for 46: head L2 -> right to 31(L2) overshoot? next is null-ish, drop; 31 L1 -> right would be 58 (overshoot), drop; 31 L0 -> right to 46 -->
+      <path class="sl-path" d="M60 50 L320 50"/>
+      <path class="sl-path" d="M320 50 L320 120"/>
+      <path class="sl-path" d="M320 120 L320 190"/>
+      <path class="sl-path" d="M320 190 L410 190"/>
+
+      <!-- head node (tall) -->
+      <rect class="sl-head" x="46" y="38" width="26" height="164" rx="5"/>
+      <text class="sl-label" x="59" y="215" text-anchor="middle">HEAD</text>
+
+      <!-- towers -->
+      <!-- 12: L0,L1 -->
+      <rect class="sl-node" x="128" y="108" width="26" height="94" rx="5"/>
+      <text class="sl-label" x="141" y="215" text-anchor="middle">12</text>
+      <!-- 25: L0 -->
+      <rect class="sl-node" x="218" y="178" width="26" height="24" rx="5"/>
+      <text class="sl-label" x="231" y="215" text-anchor="middle">25</text>
+      <!-- 31: L0,L1,L2 -->
+      <rect class="sl-node" x="308" y="38" width="26" height="164" rx="5"/>
+      <text class="sl-label" x="321" y="215" text-anchor="middle">31</text>
+      <!-- 46: L0 (target) -->
+      <rect class="sl-target" x="398" y="178" width="26" height="24" rx="5"/>
+      <text class="sl-label" x="411" y="215" text-anchor="middle">46</text>
+      <!-- 58: L0,L1 -->
+      <rect class="sl-node" x="488" y="108" width="26" height="94" rx="5"/>
+      <text class="sl-label" x="501" y="215" text-anchor="middle">58</text>
+      <!-- 70: L0 -->
+      <rect class="sl-node" x="578" y="178" width="26" height="24" rx="5"/>
+      <text class="sl-label" x="591" y="215" text-anchor="middle">70</text>
+
+      <text class="sl-lvl" x="330" y="245" text-anchor="middle">search(46): ride L2 to 31, drop, drop, then one local hop right to 46</text>
+    </svg>
+    <figcaption>Taller towers = express lanes. The orange path shows searching for 46: go right until the next node would overshoot, then drop down.</figcaption>
+  </figure>
+
+  <p><strong>Searching:</strong> start top-left. Repeat: move <em>right</em> while the next node's value is ≤ your target; when it would overshoot (or is null), <em>drop down</em> one level. Zig-zag right-and-down to the bottom. Each express lane skips ~half the nodes below it, so you halve the search space per level — binary search over a linked structure.</p>
+
+  <h2><span class="num">04</span>The magic — balance from a coin flip</h2>
+  <p>How do you decide which elements ride the express lanes? A balanced tree computes this and rebalances carefully. A skip list just <strong>flips a coin.</strong></p>
+  <div class="steps">
+    <div class="step"><div class="body">Insert the new element at <strong>level 0</strong> always.</div></div>
+    <div class="step"><div class="body"><strong>Flip a coin.</strong> Heads → promote it to level 1 as well.</div></div>
+    <div class="step"><div class="body"><strong>Flip again.</strong> Heads → promote to level 2. Keep going until tails.</div></div>
+    <div class="step"><div class="body">The streak of heads is the element's <strong>tower height</strong>.</div></div>
+  </div>
+  <p>The probabilities fall out perfectly: every element is on level 0, ~1/2 reach level 1, ~1/4 reach level 2, ~1/8 reach level 3. That's exactly the express-lane sparsity you want — each level ~half the one below — and it emerges <strong>for free from randomness</strong>: no rotations, no rebalancing pass, no bookkeeping. Expected ~log n levels, ~log n nodes touched per search.</p>
+  <p>The balance is <em>probabilistic</em> — not guaranteed on every operation, but overwhelmingly likely, the same spirit as a hash table's expected-case guarantee.</p>
+
+  <h2><span class="num">05</span>Insert &amp; delete</h2>
+  <p><strong>Insert:</strong> do a search, remembering the node where you dropped down at each level (the "update points"). Flip coins for the new tower's height. Splice the new node into each level up to that height. <strong>Delete:</strong> search, then unlink the node from every level it appears in. Both are pure <em>local pointer surgery</em> — nothing far from the change is touched. That locality is the reason skip lists shine in concurrent code (see below).</p>
+
+  <h2><span class="num">06</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Level 0 <span class="pron">(base list)</span></dt>
+      <dd>The bottom linked list containing every element in sorted order.
+      <span class="so-what">Why it matters: it's the ground truth — every element is always here; higher levels are just shortcuts into it.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Express lane <span class="pron">(higher level)</span></dt>
+      <dd>A sparser list above, holding a random subset, with pointers that skip intervening nodes.
+      <span class="so-what">Why it matters: skipping ~half the nodes per level is what turns O(n) walking into O(log n) searching.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Tower height <span class="pron">(node level)</span></dt>
+      <dd>How many levels a node appears in, decided by a coin-flip streak at insertion and fixed thereafter.
+      <span class="so-what">Why it matters: heights are random and per-node — independent of value — which is what produces the self-balancing sparsity.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Promotion probability <span class="pron">(p)</span></dt>
+      <dd>The coin's bias. p = 1/2 is classic (~2 pointers/node); Redis uses p = 1/4 for less memory.
+      <span class="so-what">Why it matters: it's the tunable dial trading memory (fewer levels) against speed (more nodes scanned per level).</span></dd>
+    </div>
+    <div class="term">
+      <dt>Update points</dt>
+      <dd>The per-level nodes where a search dropped down — the predecessors that must be re-linked on insert/delete.
+      <span class="so-what">Why it matters: capturing these during the search is what makes insert/delete simple local splices.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Probabilistic balance</dt>
+      <dd>Balance holds in expectation, not as a hard guarantee. A pathological coin run could degrade to O(n).
+      <span class="so-what">Why it matters: it's the trade — radical simplicity for an expected (not worst-case) bound, like hashing.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">07</span>Why concurrency loves skip lists</h2>
+  <p>This is the non-obvious payoff. A balanced tree's rotations can cascade and touch nodes far from the change, which makes concurrent access a locking nightmare. A skip list insert/delete is a <em>contained, local splice</em> — so it's dramatically easier to make lock-free or fine-grained-concurrent. That's exactly why Java ships <code>ConcurrentSkipListMap</code> as its concurrent ordered map: balanced trees don't parallelize cleanly, skip lists do.</p>
+
+  <h2><span class="num">08</span>Where it's used</h2>
+  <table>
+    <tr><th>System</th><th>How it uses the idea</th></tr>
+    <tr><td>Redis (sorted sets / ZSET)</td><td>The canonical use — a skip list (p = 1/4) paired with a hash map, giving ordered range queries plus O(1) lookups.</td></tr>
+    <tr><td>LevelDB / RocksDB</td><td>The LSM memtable (Day 5) is a skip list by default — sorted, fast inserts, easy concurrent reads.</td></tr>
+    <tr><td>Java</td><td><code>ConcurrentSkipListMap</code> / <code>ConcurrentSkipListSet</code> — the standard concurrent ordered collections.</td></tr>
+    <tr><td>Lucene &amp; others</td><td>Skip pointers over posting lists and ordered indexes to jump ahead quickly.</td></tr>
+  </table>
+
+  <h2><span class="num">09</span>Common confusions</h2>
+  <div class="pitfall"><strong>It's randomized, not deterministic.</strong> Two skip lists holding identical data can have entirely different internal shapes depending on their coin flips.</div>
+  <div class="pitfall"><strong>Height is set once, at insertion.</strong> You don't re-randomize or rebalance existing nodes — new randomness only enters with new inserts.</div>
+  <div class="pitfall"><strong>Levels don't depend on value or position.</strong> They're independent per-node coin flips; a tiny value is as likely to be tall as a huge one.</div>
+  <div class="pitfall"><strong>The worst case really is O(n).</strong> The guarantee is probabilistic. If you need a hard worst-case bound (hard real-time), use a balanced tree — which also tends to have better cache behavior.</div>
+
+  <h2><span class="num">10</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">A skip list is a stack of sorted linked lists where each higher level is a random, sparser express lane — giving expected O(log n) search, insert, and delete through simple local splices and coin-flip balancing instead of rotations, which is why it powers Redis sorted sets, LSM memtables, and concurrent ordered maps.</p>
+
+  <div class="footer-note">day 8 / skip lists · previously: consistent hashing, bloom filters, merkle trees, write-ahead logging, lsm trees, union-find, raft · next up: say "today's topic" tomorrow</div>
+
+</div>
+<script src="assets/topics.js"></script>
+<script src="assets/nav.js"></script>
+</body>
+</html>

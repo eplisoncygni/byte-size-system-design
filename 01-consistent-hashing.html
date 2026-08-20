@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consistent Hashing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/nav.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 1</div>
+  <h1>Consistent Hashing</h1>
+  <p class="lede">How distributed systems decide which server owns which data — without reshuffling everything every time a server joins or leaves.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>Imagine you have millions of cache entries and 4 servers. You need a rule for "which server holds which key?" The obvious rule is <code>hash(key) % 4</code> — divide by the number of servers, use the remainder.</p>
+  <p>It works perfectly… until server count changes. Go from 4 servers to 5, and <code>hash(key) % 5</code> gives a different answer for almost <em>every</em> key. Nearly all your data is suddenly on the "wrong" server. Caches miss everywhere, databases get hammered, data has to migrate en masse.</p>
+  <div class="analogy">
+    <strong>Analogy:</strong> it's like assigning students to classrooms by "roll number ÷ number of rooms, take remainder." Open one new classroom and you've reassigned the whole school. What you really want: a new room takes a few nearby students, and everyone else stays put.
+  </div>
+
+  <h2><span class="num">02</span>The core idea</h2>
+  <p>Put both <strong>keys and servers</strong> on the same circle (the hash output range bent into a ring, e.g. 0 to 2³²−1, wrapping around). Each key is owned by the <strong>first server you meet walking clockwise</strong> from the key's position.</p>
+
+  <figure>
+    <svg width="320" height="300" viewBox="0 0 320 300" role="img" aria-label="Hash ring with three servers and two keys">
+      <circle cx="160" cy="150" r="105" fill="none" stroke="#c9c0ae" stroke-width="1.5"/>
+      <path d="M251 113 A105 105 0 0 1 253 190" fill="none" stroke="#b4541e" stroke-width="2"/>
+      <path d="M255 187 l-7 -4 m7 4 l-1 -8" stroke="#b4541e" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <circle cx="160" cy="45" r="14" fill="#e9e1f5" stroke="#6a4fa3" stroke-width="1.5"/>
+      <text x="160" y="50" text-anchor="middle" font-family="JetBrains Mono" font-size="13" fill="#3f2d70">A</text>
+      <circle cx="251" cy="202" r="14" fill="#e9e1f5" stroke="#6a4fa3" stroke-width="1.5"/>
+      <text x="251" y="207" text-anchor="middle" font-family="JetBrains Mono" font-size="13" fill="#3f2d70">B</text>
+      <circle cx="69" cy="202" r="14" fill="#e9e1f5" stroke="#6a4fa3" stroke-width="1.5"/>
+      <text x="69" y="207" text-anchor="middle" font-family="JetBrains Mono" font-size="13" fill="#3f2d70">C</text>
+      <circle cx="251" cy="98" r="6" fill="#e8a13c" stroke="#9a6010" stroke-width="1"/>
+      <text x="268" y="92" font-family="JetBrains Mono" font-size="12" fill="#6f675c">key x</text>
+      <text x="160" y="287" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#6f675c">key x walks clockwise → lands on B</text>
+    </svg>
+    <figcaption>Servers and keys share one circle. Ownership = next server clockwise.</figcaption>
+  </figure>
+
+  <p>The payoff: when a server leaves, <em>only its keys</em> slide to the next server clockwise. When a server joins, it takes over <em>only</em> a slice from one neighbor. On average just <code>K/N</code> keys move (K = keys, N = servers) — instead of nearly all of them.</p>
+
+  <h2><span class="num">03</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Hash ring <span class="pron">(a.k.a. the continuum)</span></dt>
+      <dd>The full output range of a hash function treated as a circle — after the maximum value it wraps back to 0. Everything in this technique lives on this circle.
+      <span class="so-what">Why it matters: a circle has no "end," so the rule "go clockwise to the next server" always finds an answer.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Node / server position</dt>
+      <dd>Each server is hashed (e.g. by its name or IP) to a point on the ring. That point marks where its territory begins.
+      <span class="so-what">Why it matters: a server's position is stable — it doesn't depend on how many other servers exist. That's the whole trick.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Clockwise lookup <span class="pron">(successor)</span></dt>
+      <dd>To find a key's owner: hash the key onto the ring, then walk clockwise until you hit a server. In code, this is a binary search over a sorted list of server positions.
+      <span class="so-what">Why it matters: lookup is fast — O(log n) — and every client computes the same answer with no coordination.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Virtual nodes <span class="pron">(vnodes / replicas)</span></dt>
+      <dd>Instead of one point per server, each server is hashed to many points (often 100–200), e.g. <code>hash("serverA#1")</code>, <code>hash("serverA#2")</code>… The server owns all the little arcs at those points.
+      <span class="so-what">Why it matters: with one point per server, luck decides who gets a huge slice. Many small slices average out the load — and when a server dies, its load scatters across many neighbors instead of crushing one.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Rebalancing / key movement</dt>
+      <dd>The data migration that happens when membership changes. Consistent hashing's promise is that this is <em>minimal</em>: only keys in the affected arcs move.
+      <span class="so-what">Why it matters: this is the metric the whole technique optimizes. Modulo hashing moves ~100% of keys; consistent hashing moves ~1/N of them.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Hot key / hotspot</dt>
+      <dd>A single extremely popular key (one celebrity's profile, one viral post). It hashes to exactly one place no matter what.
+      <span class="so-what">Why it matters: consistent hashing balances <em>how many</em> keys each server gets, not <em>how popular</em> they are. Hotspots need other tools: replication, local caching, request coalescing.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Weighted placement</dt>
+      <dd>Giving a more powerful server more vnodes so it owns a bigger share of the ring.
+      <span class="so-what">Why it matters: real clusters are rarely uniform hardware; vnode counts are the dial for that.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">04</span>What happens when a server dies</h2>
+  <div class="steps">
+    <div class="step"><div class="body"><strong>Before:</strong> ring has A, B, C. Key <code>x</code> sits just before B, so B owns it.</div></div>
+    <div class="step"><div class="body"><strong>B disappears.</strong> Its positions vanish from the ring. Nothing else moves.</div></div>
+    <div class="step"><div class="body"><strong>Lookups still work:</strong> walking clockwise from <code>x</code> now skips where B was and lands on the next server (say A). A is the new owner.</div></div>
+    <div class="step"><div class="body"><strong>Only B's keys moved.</strong> Every key that belonged to A or C resolves exactly as before. With vnodes, B's keys spread across several servers, not just one.</div></div>
+  </div>
+
+  <h2><span class="num">05</span>Where it's used</h2>
+  <table>
+    <tr><th>System</th><th>How it uses the idea</th></tr>
+    <tr><td>DynamoDB / Cassandra</td><td>Partition data across nodes; the ring (with vnodes) decides which node stores which partition.</td></tr>
+    <tr><td>Memcached (Ketama)</td><td>Clients hash keys onto a ring of cache servers, so adding cache capacity doesn't invalidate everything.</td></tr>
+    <tr><td>CDNs &amp; load balancers</td><td>Route the same user/content to the same backend ("sticky" routing) even as backends scale up and down. Envoy's ring-hash policy is exactly this.</td></tr>
+    <tr><td>Discord, chat systems</td><td>Pin a channel/session to a particular server process so its state stays in one place.</td></tr>
+  </table>
+
+  <h2><span class="num">06</span>Common confusions</h2>
+  <div class="pitfall"><strong>"Consistent" ≠ strong consistency.</strong> The name has nothing to do with consistency in the CAP-theorem sense. It means the key→server mapping stays <em>mostly consistent</em> when membership changes.</div>
+  <div class="pitfall"><strong>The ring is a concept, not a network.</strong> Servers aren't physically arranged in a circle and don't pass messages around one. The ring is just a sorted list of hash values that every client can compute independently.</div>
+  <div class="pitfall"><strong>It doesn't fix popularity imbalance.</strong> Equal key counts ≠ equal traffic. Hotspots remain a separate problem.</div>
+
+  <h2><span class="num">07</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">Hash servers and keys onto the same circle, give each key to the next server clockwise — so when servers come and go, almost nothing has to move.</p>
+
+  <div class="footer-note">day 1 / consistent hashing · next up: say "today's topic" tomorrow</div>
+
+</div>
+<script src="assets/topics.js"></script>
+<script src="assets/nav.js"></script>
+</body>
+</html>

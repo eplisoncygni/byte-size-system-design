@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Write-Ahead Logging</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/base.css">
+  <style>
+  /* page-specific styles */
+  .invariant {
+    background: var(--card);
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 22px 0;
+    text-align: center;
+    font-family: 'Fraunces', serif;
+    font-size: 20px;
+  }
+  .invariant .small {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  </style>
+<link rel="stylesheet" href="assets/nav.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 4</div>
+  <h1>Write-Ahead Logging</h1>
+  <p class="lede">How a database survives losing power mid-write: describe every change in an append-only log <em>before</em> touching the real data.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>A database must keep two promises at once: a committed write <strong>survives any crash</strong> (power loss, <code>kill -9</code>, kernel panic), and writes are <strong>fast</strong>.</p>
+  <p>The naive approach — update each row's actual location in the data file as it changes — breaks both promises. It's slow, because rows live at scattered positions, forcing <em>random</em> disk I/O. And it's unsafe: if the machine dies halfway through rewriting a page, that page is left half-old, half-new — corrupted. A crash at the wrong microsecond destroys data.</p>
+  <div class="analogy">
+    <strong>Analogy:</strong> a restaurant during a chaotic dinner rush. The risky way: the waiter runs to the kitchen and rearranges the chefs' stations after every individual request. The safe way: the waiter <em>first writes each order on the kitchen ticket rail</em> — one line, always appended at the end — and the kitchen catches up from the tickets at its own pace. If the kitchen descends into chaos (a crash), nothing is lost: the rail holds every order in sequence, and you replay it. The ticket rail is the write-ahead log.
+  </div>
+
+  <h2><span class="num">02</span>The core mechanism</h2>
+  <p>Keep a separate, append-only <strong>log file</strong> next to the real data files. Then follow one discipline for every change:</p>
+  <div class="steps">
+    <div class="step"><div class="body"><strong>Describe the change</strong> as a small log record ("set balance of row 42 from 100 to 70").</div></div>
+    <div class="step"><div class="body"><strong>Append it to the log and force it to disk</strong> (<code>fsync</code> — past the OS cache, onto the physical device).</div></div>
+    <div class="step"><div class="body"><strong>Acknowledge the commit.</strong> The transaction is now durable — even though the data file hasn't been touched yet.</div></div>
+    <div class="step"><div class="body"><strong>Update the real data files lazily,</strong> in memory first, flushed to disk whenever convenient.</div></div>
+  </div>
+
+  <figure>
+    <svg width="640" height="330" viewBox="0 0 680 330" role="img" aria-label="Write path through a write-ahead log">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M1 1 L9 5 L1 9" fill="none" stroke="#b4541e" stroke-width="1.6" stroke-linecap="round"/>
+        </marker>
+        <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M1 1 L9 5 L1 9" fill="none" stroke="#9aa39a" stroke-width="1.4" stroke-linecap="round"/>
+        </marker>
+      </defs>
+
+      <rect class="d-box" x="40" y="40" width="150" height="48" rx="9"/>
+      <text class="d-label" x="115" y="60" text-anchor="middle">write:</text>
+      <text class="d-label" x="115" y="76" text-anchor="middle">row 42 → 70</text>
+
+      <line class="d-arrow" x1="190" y1="64" x2="268" y2="64" marker-end="url(#ah)"/>
+      <text class="d-small" x="229" y="52" text-anchor="middle">1. append</text>
+
+      <rect class="d-log" x="272" y="30" width="368" height="68" rx="9"/>
+      <text class="d-label" x="456" y="56" text-anchor="middle">WAL (sequential, append-only)</text>
+      <text class="d-small" x="456" y="78" text-anchor="middle">…LSN 17 | LSN 18 | LSN 19: row42 100→70 | COMMIT ◀ fsync</text>
+
+      <line class="d-arrow" x1="456" y1="98" x2="456" y2="140" marker-end="url(#ah)"/>
+      <text class="d-small" x="540" y="124" text-anchor="middle">2. fsync = committed</text>
+
+      <rect class="d-mem" x="356" y="144" width="200" height="50" rx="9"/>
+      <text class="d-label" x="456" y="164" text-anchor="middle">page cache (memory)</text>
+      <text class="d-small" x="456" y="182" text-anchor="middle">row 42 = 70 (dirty page)</text>
+
+      <line class="d-arrow-soft" x1="456" y1="194" x2="456" y2="240" marker-end="url(#ah2)"/>
+      <text class="d-small" x="563" y="220" text-anchor="middle">3. flushed later, lazily</text>
+
+      <rect class="d-data" x="356" y="244" width="200" height="50" rx="9"/>
+      <text class="d-label" x="456" y="264" text-anchor="middle">data files (random I/O)</text>
+      <text class="d-small" x="456" y="282" text-anchor="middle">updated whenever convenient</text>
+
+      <text class="d-small" x="115" y="270" text-anchor="middle">crash at any moment?</text>
+      <text class="d-small" x="115" y="288" text-anchor="middle">replay WAL → recover</text>
+
+      <text class="d-small" x="340" y="320" text-anchor="middle">The log is the source of truth; data files just catch up to it.</text>
+    </svg>
+    <figcaption>Log first (sequential, fsync'd), data later. The commit happens at step 2, not step 3.</figcaption>
+  </figure>
+
+  <div class="invariant">
+    <span class="small">the one rule</span>
+    A change's log record must be on durable disk <em>before</em> the changed data page is.
+  </div>
+  <p>That ordering is the entire guarantee. Honor it and a crash can always be repaired from the log; violate it and you can end up with data on disk that no log record explains — unrecoverable.</p>
+  <p>The speed comes from the shape of the writes: appending to one file is <strong>sequential I/O</strong>, the fastest pattern a disk offers. WAL converts scattered random writes into one stream, and defers the random work to a background flush.</p>
+
+  <h2><span class="num">03</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Log record</dt>
+      <dd>One appended entry describing one change — typically which page/row, the old value, and the new value (enough to redo <em>or</em> undo it).
+      <span class="so-what">Why it matters: records carry both directions of the change, which is what lets recovery both re-apply committed work and roll back uncommitted work.</span></dd>
+    </div>
+    <div class="term">
+      <dt>LSN <span class="pron">(log sequence number)</span></dt>
+      <dd>A monotonically increasing ID on every log record. Each data page also remembers the LSN of the last record applied to it.
+      <span class="so-what">Why it matters: replay becomes idempotent — recovery compares LSNs and skips records a page already reflects, so replaying twice is harmless.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Commit record + fsync</dt>
+      <dd>A special entry marking a transaction durable. <code>fsync</code> forces it past the OS cache onto the physical device. The moment that flush returns, the transaction <em>is</em> committed.
+      <span class="so-what">Why it matters: the commit lives in the log, not the data files. The data files can be arbitrarily stale at crash time and nothing is lost.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Checkpoint</dt>
+      <dd>A periodic operation: flush dirty pages to the data files, then record "everything up to LSN x is reflected on disk."
+      <span class="so-what">Why it matters: it bounds recovery time — restart replays only from the last checkpoint, not from the beginning of history — and lets old log segments be recycled.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Redo / undo recovery <span class="pron">(ARIES)</span></dt>
+      <dd>The restart procedure: <em>redo</em> re-applies committed changes that hadn't reached the data files; <em>undo</em> rolls back changes from transactions that never committed.
+      <span class="so-what">Why it matters: after redo + undo the database reflects exactly the committed transactions — no lost commits, no phantom half-done work.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Group commit</dt>
+      <dd>Batching many transactions' commit records into a single <code>fsync</code>.
+      <span class="so-what">Why it matters: the flush is the expensive step. Amortizing one flush over dozens of commits multiplies throughput — same batching lesson as Bitcoin packing transactions per block.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">04</span>Crash and recovery, step by step</h2>
+  <div class="steps">
+    <div class="step"><div class="body"><strong>Transaction commits:</strong> its records + commit marker are fsync'd to the WAL. Data pages updated only in memory.</div></div>
+    <div class="step"><div class="body"><strong>Power dies.</strong> Memory is gone. Data files on disk are stale. The WAL is intact.</div></div>
+    <div class="step"><div class="body"><strong>Restart — redo:</strong> scan the log from the last checkpoint, re-apply every change whose effects aren't yet in the data files (LSN comparison says which).</div></div>
+    <div class="step"><div class="body"><strong>Restart — undo:</strong> any changes found from transactions with no commit record get rolled back using the old values in their log records.</div></div>
+    <div class="step"><div class="body"><strong>Done:</strong> the database equals exactly the committed history. The crash cost a recovery scan, not data.</div></div>
+  </div>
+
+  <h2><span class="num">05</span>Where it's used</h2>
+  <table>
+    <tr><th>System</th><th>How it uses the idea</th></tr>
+    <tr><td>PostgreSQL / MySQL (InnoDB)</td><td>The canonical WAL ("WAL" / "redo log"): commit = log flush; data pages flushed lazily; also the basis of replication and point-in-time recovery.</td></tr>
+    <tr><td>Cassandra / RocksDB</td><td>The LSM "commit log" is a WAL: writes hit the log + memtable; if the node dies before a memtable flush, the log rebuilds it.</td></tr>
+    <tr><td>Filesystems (ext4, NTFS)</td><td>Journaling = WAL for filesystem metadata, so a crash mid-operation doesn't corrupt the directory structure.</td></tr>
+    <tr><td>Kafka</td><td>The append-only log <em>is</em> the product — a WAL promoted from internal mechanism to the system's entire data model.</td></tr>
+    <tr><td>Event sourcing</td><td>Architecture pattern: store the log of changes as the source of truth and derive current state from it — WAL as a design philosophy.</td></tr>
+  </table>
+
+  <h2><span class="num">06</span>Common confusions</h2>
+  <div class="pitfall"><strong>The commit happens at the log flush, not the data write.</strong> Data files can lag minutes behind. "Committed" means "in the durable log," nothing more — and that's enough.</div>
+  <div class="pitfall"><strong>WAL is not a backup.</strong> It's a short-lived recovery journal; segments are recycled once a checkpoint makes them unnecessary. (Shipped elsewhere, though, the same log powers replication and point-in-time recovery.)</div>
+  <div class="pitfall"><strong>Durability is only as honest as fsync.</strong> Some drives acknowledge a flush while data sits in volatile cache. If the hardware lies, the database's promise quietly breaks — a real and notorious class of data-loss bugs.</div>
+  <div class="pitfall"><strong>Sequential-ness is the point, not a detail.</strong> The log being append-only is what makes durability affordable. Forcing every random data write to disk directly would be correct but brutally slow.</div>
+
+  <h2><span class="num">07</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">Append a description of every change to a sequential, fsync'd log <em>before</em> touching the real data — so a crash can always be repaired by replaying committed work and discarding uncommitted work.</p>
+
+  <div class="footer-note">day 4 / write-ahead logging · previously: consistent hashing, bloom filters, merkle trees · next up: say "today's topic" tomorrow</div>
+
+</div>
+<script src="assets/topics.js"></script>
+<script src="assets/nav.js"></script>
+</body>
+</html>

@@ -3,271 +3,43 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Daily Deep Dives · Index</title>
+<title>Daily Deep-Dives · Index</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --paper: #faf6ef;
-    --ink: #2b2722;
-    --muted: #6f675c;
-    --line: #e3dccf;
-    --accent: #b4541e;
-    --accent-soft: #f4e3d4;
-    --teal: #1d6f5c;
-    --teal-soft: #e0efe9;
-    --card: #ffffff;
-    --purple: #6a4fa3;
-    --purple-soft: #e9e1f5;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: var(--paper);
-    color: var(--ink);
-    font-family: 'Newsreader', Georgia, serif;
-    font-size: 18px;
-    line-height: 1.65;
-  }
-  .page { max-width: 860px; margin: 0 auto; padding: 56px 28px 96px; }
-
-  .kicker {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 14px;
-  }
-  h1 {
-    font-family: 'Fraunces', serif;
-    font-size: clamp(38px, 7vw, 60px);
-    font-weight: 700;
-    line-height: 1.05;
-    letter-spacing: -0.015em;
-    margin-bottom: 18px;
-  }
-  .lede { font-size: 21px; color: var(--muted); font-style: italic; max-width: 60ch; margin-bottom: 8px; }
-
-  .meta-row {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--muted);
-    letter-spacing: 0.04em;
-    margin-top: 18px;
-  }
-
-  .divider { border: none; border-top: 1px solid var(--line); margin: 40px 0; }
-
-  .section-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 8px 0 20px;
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 16px;
-  }
-
-  a.card {
-    display: flex;
-    flex-direction: column;
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 20px 22px 18px;
-    text-decoration: none;
-    color: inherit;
-    transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
-  }
-  a.card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 22px rgba(43,39,34,0.10);
-    border-color: #d6ccba;
-  }
-
-  .card .top {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 12px;
-  }
-  .card .day {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--accent);
-  }
-  .card .date {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--muted);
-  }
-  .card h3 {
-    font-family: 'Fraunces', serif;
-    font-size: 22px;
-    font-weight: 600;
-    line-height: 1.15;
-    margin-bottom: 8px;
-    letter-spacing: -0.01em;
-  }
-  .card p {
-    font-size: 15.5px;
-    color: var(--muted);
-    line-height: 1.5;
-    flex-grow: 1;
-    margin-bottom: 14px;
-  }
-  .tag {
-    align-self: flex-start;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10.5px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 4px 10px;
-    border-radius: 20px;
-  }
-  .t-distributed { background: var(--purple-soft); color: var(--purple); }
-  .t-storage     { background: var(--accent-soft); color: var(--accent); }
-  .t-probabilistic { background: var(--teal-soft); color: var(--teal); }
-  .t-algorithms  { background: #eef0ee; color: #5f6b5f; }
-
-  .thread {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 24px 26px;
-    margin-top: 12px;
-  }
-  .thread h2 {
-    font-family: 'Fraunces', serif;
-    font-size: 22px;
-    font-weight: 600;
-    margin-bottom: 12px;
-  }
-  .thread p { font-size: 16.5px; margin-bottom: 12px; }
-  .thread p:last-child { margin-bottom: 0; }
-  .thread strong { color: var(--accent); font-weight: 600; }
-
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin: 4px 0 28px;
-  }
-  .legend .tag { align-self: auto; }
-
-  .footer-note {
-    margin-top: 48px;
-    padding-top: 20px;
-    border-top: 1px solid var(--line);
-    font-size: 14px;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-  }
-</style>
+<link rel="stylesheet" href="assets/nav.css">
+  <link rel="stylesheet" href="assets/base.css">
 </head>
 <body>
-<div class="page">
+  <main class="hub">
+    <div class="hub__kicker">Daily deep-dive · systems &amp; algorithms</div>
+    <h1>The deep-dive index</h1>
+    <p class="hub__lede">One surprise topic a day — data structures, storage internals, and distributed-systems primitives, threaded together as they build on each other.</p>
 
-  <div class="kicker">Daily deep-dive series</div>
-  <h1>Byte-sized deep dives</h1>
-  <p class="lede">A running collection of 30-minute deep dives into the data structures, storage engines, and distributed-systems ideas that show up under the hood everywhere.</p>
-  <div class="meta-row">9 topics · updated 2026-06-17 · one new surprise topic per day</div>
+    <div class="hub__list" id="hub-list"></div>
 
-  <hr class="divider">
+    <div class="hub__foot" id="hub-foot"></div>
+  </main>
 
-  <div class="legend">
-    <span class="tag t-distributed">Distributed systems</span>
-    <span class="tag t-storage">Storage &amp; durability</span>
-    <span class="tag t-probabilistic">Probabilistic</span>
-    <span class="tag t-algorithms">Algorithms &amp; DSA</span>
-  </div>
-
-  <div class="grid">
-
-    <a class="card" href="2026-06-05-consistent-hashing.html">
-      <div class="top"><span class="day">Day 1</span><span class="date">2026-06-05</span></div>
-      <h3>Consistent Hashing</h3>
-      <p>Decide which server owns which key — without reshuffling everything when a server joins or leaves.</p>
-      <span class="tag t-distributed">Distributed systems</span>
-    </a>
-
-    <a class="card" href="2026-06-08-bloom-filters.html">
-      <div class="top"><span class="day">Day 2</span><span class="date">2026-06-08</span></div>
-      <h3>Bloom Filters</h3>
-      <p>A tiny bit array that says "definitely not here" or "probably here" — using a fraction of the memory.</p>
-      <span class="tag t-probabilistic">Probabilistic</span>
-    </a>
-
-    <a class="card" href="2026-06-08-merkle-trees.html">
-      <div class="top"><span class="day">Day 3</span><span class="date">2026-06-08</span></div>
-      <h3>Merkle Trees</h3>
-      <p>A tree of hashes: one value verifies a whole dataset, and two copies find their differences cheaply.</p>
-      <span class="tag t-algorithms">Algorithms &amp; DSA</span>
-    </a>
-
-    <a class="card" href="2026-06-10-write-ahead-logging.html">
-      <div class="top"><span class="day">Day 4</span><span class="date">2026-06-10</span></div>
-      <h3>Write-Ahead Logging</h3>
-      <p>How a database survives losing power mid-write: log the change before touching the real data.</p>
-      <span class="tag t-storage">Storage &amp; durability</span>
-    </a>
-
-    <a class="card" href="2026-06-11-lsm-trees.html">
-      <div class="top"><span class="day">Day 5</span><span class="date">2026-06-11</span></div>
-      <h3>LSM Trees</h3>
-      <p>The write-optimized engine inside Cassandra &amp; RocksDB, where every write is an append.</p>
-      <span class="tag t-storage">Storage &amp; durability</span>
-    </a>
-
-    <a class="card" href="2026-06-14-union-find.html">
-      <div class="top"><span class="day">Day 6</span><span class="date">2026-06-14</span></div>
-      <h3>Union-Find</h3>
-      <p>Merge groups in one pointer change, test membership in near-constant time — the self-healing structure.</p>
-      <span class="tag t-algorithms">Algorithms &amp; DSA</span>
-    </a>
-
-    <a class="card" href="2026-06-15-raft-consensus.html">
-      <div class="top"><span class="day">Day 7</span><span class="date">2026-06-15</span></div>
-      <h3>Consensus &amp; Raft</h3>
-      <p>How servers agree on one ordered log through crashes and network splits — via majority vote.</p>
-      <span class="tag t-distributed">Distributed systems</span>
-    </a>
-
-    <a class="card" href="2026-06-16-skip-lists.html">
-      <div class="top"><span class="day">Day 8</span><span class="date">2026-06-16</span></div>
-      <h3>Skip Lists</h3>
-      <p>Sorted linked lists with random "express lanes" — balanced-tree speed from coin flips, not rotations.</p>
-      <span class="tag t-algorithms">Algorithms &amp; DSA</span>
-    </a>
-
-    <a class="card" href="2026-06-17-hyperloglog.html">
-      <div class="top"><span class="day">Day 9</span><span class="date">2026-06-17</span></div>
-      <h3>HyperLogLog</h3>
-      <p>Count billions of distinct items in ~12 KB — the rarest pattern seen implies how much you've seen.</p>
-      <span class="tag t-probabilistic">Probabilistic</span>
-    </a>
-
-  </div>
-
-  <hr class="divider">
-
-  <div class="section-label">How they connect</div>
-  <div class="thread">
-    <h2>The thread running through it all</h2>
-    <p>These aren't nine isolated topics — they interlock. <strong>Write-ahead logging</strong> (Day 4) is the durability layer beneath <strong>LSM trees</strong> (Day 5), whose in-memory memtable is a <strong>skip list</strong> (Day 8) and whose on-disk files are guarded by <strong>Bloom filters</strong> (Day 2).</p>
-    <p><strong>Consistent hashing</strong> (Day 1) decides where data lives across a cluster; <strong>Merkle trees</strong> (Day 3) check whether replicas match; <strong>Raft</strong> (Day 7) is that same durable log from Day 4 taught to survive the loss of whole machines. And the two <strong>probabilistic</strong> structures bookend the set: Bloom answers "is X in the set?", <strong>HyperLogLog</strong> (Day 9) answers "how big is the set?"</p>
-    <p><strong>Union-Find</strong> (Day 6) is the pure-algorithm palate cleanser — the recurring reminder that a great data structure often comes down to one clever, simple idea.</p>
-  </div>
-
-  <div class="footer-note">daily deep dives · say "today's topic" for the next one</div>
-
-</div>
+  <script src="assets/topics.js"></script>
+  <script>
+    (function () {
+      var topics = (window.TOPICS || []).slice().sort(function (a, b) {
+        return a.day - b.day;
+      });
+      var esc = function (s) {
+        return String(s).replace(/[&<>"]/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+        });
+      };
+      document.getElementById("hub-list").innerHTML = topics.map(function (t) {
+        return '<a class="hub__item" href="' + esc(t.slug) + '.html">' +
+                 '<span class="hub__day">Day ' + t.day + '</span>' +
+                 '<span class="hub__title">' + esc(t.title) + '</span>' +
+               '</a>';
+      }).join("");
+      document.getElementById("hub-foot").textContent =
+        topics.length + " topics and counting";
+    })();
+  </script>
 </body>
 </html>
