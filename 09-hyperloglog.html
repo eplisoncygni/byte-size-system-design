@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Day 9 · HyperLogLog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="nav.css">
+<style>
+  /* page-specific: hyperloglog */
+  .insight {
+    background: var(--card);
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 22px 0;
+    text-align: center;
+    font-family: 'Fraunces', serif;
+    font-size: 20px;
+    line-height: 1.4;
+  }
+  .insight .small {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .hll-mono { font-family: 'JetBrains Mono', monospace; }
+  .bitz  { fill: #6a4fa3; }
+  .bit1  { fill: #b4541e; font-weight: 500; }
+  .reg      { fill: #e9e1f5; stroke: #6a4fa3; stroke-width: 1.3; }
+  .reg-hot  { fill: #f6dca6; stroke: #b4541e; stroke-width: 2; }
+  .reglabel { font-family: 'JetBrains Mono', monospace; font-size: 13px; fill: #2b2722; }
+  .regsmall { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #6f675c; }
+  .harrow   { stroke: #b4541e; stroke-width: 1.6; fill: none; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 9</div>
+  <h1>HyperLogLog</h1>
+  <p class="lede">Count the number of <em>distinct</em> items in a billions-strong stream using ~12 KB of memory and one delightful trick: the rarest pattern you've seen tells you how much you've seen.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>You want the count of <strong>distinct</strong> elements in a massive stream: unique visitors to a site, distinct search queries in a day, unique source IPs hitting a router. The obvious method — keep a hash set of everything seen and read its size — costs memory proportional to the number of distinct items. A billion uniques means storing a billion things.</p>
+  <p>HyperLogLog estimates that same count using a <strong>fixed, tiny</strong> footprint — about 12 KB — for cardinalities into the billions, with roughly 1% error. Twelve kilobytes to count billions of distinct things.</p>
+  <div class="analogy">
+    <strong>Analogy:</strong> a friend says, "I flipped a coin many times; the longest run of heads I ever got was 10 in a row." Roughly how many flips? A run of 10 heads is a 1-in-1024 event, so you'd guess they flipped on the order of 1000 times. You estimated the size of an effort from the <em>rarity of its most extreme outcome</em> — no need to have counted the flips.
+  </div>
+
+  <h2><span class="num">02</span>The core insight</h2>
+  <div class="insight">
+    <span class="small">the whole idea</span>
+    The rarest hash pattern you've observed is a proxy for how many distinct items you've hashed. Rare patterns only show up after many distinct tries.
+  </div>
+  <p>Hash each item to a random-looking binary string, and count its <strong>leading zeros</strong> (the position of the leftmost 1). A hash starting <code>0001…</code> has 3 leading zeros — a 1-in-16 pattern. Track the <strong>maximum</strong> leading-zero count ever seen: if the max is <code>k</code>, you've probably seen about <code>2^k</code> distinct items, because such a pattern is a 1-in-2^(k+1) event.</p>
+  <p><strong>Why it counts <em>distinct</em> items for free:</strong> hashing is deterministic, so the same item always yields the same hash and the same leading-zero count. Seeing "visitor A" a million times contributes exactly what seeing it once does. Duplicates change nothing.</p>
+
+  <figure>
+    <svg width="600" height="150" viewBox="0 0 600 150" role="img" aria-label="A hash split into a bucket index and a leading-zero count">
+      <text class="hll-mono" x="30" y="34" font-size="13" fill="#6f675c">hash(item) =</text>
+      <rect x="30" y="50" width="150" height="38" rx="6" fill="#e0efe9" stroke="#1d6f5c" stroke-width="1.3"/>
+      <text class="hll-mono" x="105" y="74" font-size="16" text-anchor="middle" fill="#1d6f5c">1101 00</text>
+      <text class="regsmall" x="105" y="104" text-anchor="middle">first bits →</text>
+      <text class="regsmall" x="105" y="118" text-anchor="middle">bucket index</text>
+      <rect x="184" y="50" width="386" height="38" rx="6" fill="#f4ede0" stroke="#b4541e" stroke-width="1.3"/>
+      <text class="hll-mono" x="210" y="74" font-size="16"><tspan class="bitz">000</tspan><tspan class="bit1">1</tspan><tspan fill="#6f675c">0110101001…</tspan></text>
+      <text class="regsmall" x="360" y="104" text-anchor="middle">remaining bits → count leading zeros</text>
+      <text class="regsmall" x="360" y="118" text-anchor="middle">here: 3 leading zeros → register value 4 (position of first 1)</text>
+    </svg>
+    <figcaption>First bits pick a bucket; the rest supply that bucket's leading-zero count.</figcaption>
+  </figure>
+
+  <h2><span class="num">03</span>Killing the noise — many buckets</h2>
+  <p>A single "max leading zeros" is wildly noisy: one freak hash starting with 20 zeros would blow the estimate to a million after only a handful of items. The fix is the statistician's standard move — <strong>run many independent estimators and combine them.</strong></p>
+  <div class="steps">
+    <div class="step"><div class="body">Use the <strong>first few bits</strong> of each hash to pick a <strong>bucket</strong> (register). 14 bits → 2¹⁴ = 16,384 buckets.</div></div>
+    <div class="step"><div class="body">Use the <strong>remaining bits</strong> to compute the leading-zero count, and store the <em>max</em> in that bucket.</div></div>
+    <div class="step"><div class="body">Each item updates exactly one bucket. Now you have thousands of independent estimators, each watching its own slice.</div></div>
+    <div class="step"><div class="body">Combine all buckets and scale up to get the final distinct-count estimate.</div></div>
+  </div>
+
+  <figure>
+    <svg width="600" height="180" viewBox="0 0 600 180" role="img" aria-label="An array of registers combined by harmonic mean into one estimate">
+      <text class="regsmall" x="300" y="20" text-anchor="middle">16,384 registers — each holds a max leading-zero count</text>
+      <g>
+        <rect class="reg" x="40"  y="40" width="46" height="46" rx="6"/><text class="reglabel" x="63"  y="69" text-anchor="middle">2</text>
+        <rect class="reg" x="92"  y="40" width="46" height="46" rx="6"/><text class="reglabel" x="115" y="69" text-anchor="middle">5</text>
+        <rect class="reg-hot" x="144" y="40" width="46" height="46" rx="6"/><text class="reglabel" x="167" y="69" text-anchor="middle">3</text>
+        <rect class="reg" x="196" y="40" width="46" height="46" rx="6"/><text class="reglabel" x="219" y="69" text-anchor="middle">4</text>
+        <rect class="reg" x="248" y="40" width="46" height="46" rx="6"/><text class="reglabel" x="271" y="69" text-anchor="middle">2</text>
+        <rect class="reg" x="300" y="40" width="46" height="46" rx="6"/><text class="reglabel" x="323" y="69" text-anchor="middle">6</text>
+        <rect class="reg" x="352" y="40" width="46" height="46" rx="6"/><text class="reglabel" x="375" y="69" text-anchor="middle">3</text>
+        <text class="reglabel" x="420" y="69" text-anchor="middle">· · ·</text>
+        <rect class="reg" x="452" y="40" width="46" height="46" rx="6"/><text class="reglabel" x="475" y="69" text-anchor="middle">4</text>
+        <rect class="reg" x="504" y="40" width="46" height="46" rx="6"/><text class="reglabel" x="527" y="69" text-anchor="middle">2</text>
+      </g>
+      <path class="harrow" d="M300 92 L300 120" marker-end="url(#dn)"/>
+      <defs>
+        <marker id="dn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M1 1 L9 5 L1 9" fill="none" stroke="#b4541e" stroke-width="1.6" stroke-linecap="round"/>
+        </marker>
+      </defs>
+      <rect x="196" y="124" width="208" height="40" rx="8" fill="#f6dca6" stroke="#b4541e" stroke-width="1.5"/>
+      <text class="reglabel" x="300" y="149" text-anchor="middle">harmonic mean × α × m²</text>
+    </svg>
+    <figcaption>Each register is one estimator; the harmonic mean (bias-corrected) fuses them into a stable count.</figcaption>
+  </figure>
+
+  <h2><span class="num">04</span>The two refinements that make it "Hyper"</h2>
+  <p><strong>Harmonic mean, not arithmetic mean.</strong> When fusing the buckets, HLL uses the <em>harmonic</em> mean, which heavily discounts large outliers — so one unlucky bucket that saw a freak 20-zero hash gets tamed instead of dominating. Swapping the plain average (the earlier "LogLog" algorithm) for the harmonic mean is precisely what put the "Hyper" in HyperLogLog and sharply improved accuracy.</p>
+  <p><strong>A bias-correction constant.</strong> The raw formula is systematically off by a predictable factor, so HLL multiplies by a correction constant (<code>α_m</code>, depending on bucket count). At very <em>small</em> cardinalities it switches to a different method (<em>linear counting</em>), because the leading-zeros trick is unreliable when barely anything has been seen.</p>
+
+  <h2><span class="num">05</span>The accuracy / memory dial</h2>
+  <p>Standard error ≈ <code>1.04 / √m</code>, where <code>m</code> is the bucket count. More buckets, more accuracy — a smooth trade. With <code>m = 16,384</code>, error ≈ 1.04/128 ≈ 0.8%. Each bucket stores only a small integer (the max leading-zero count never exceeds ~50, so 6 bits suffice): 16,384 × 6 bits ≈ <strong>12 KB total</strong>, whether you're counting a thousand items or ten billion. That flat footprint is the entire point.</p>
+
+  <h2><span class="num">06</span>The superpower — mergeability</h2>
+  <p>Two HyperLogLog sketches can be <strong>merged</strong> into one representing the union of both streams by taking the <strong>element-wise maximum</strong> of their registers — bucket by bucket, keep the larger value. No re-scanning the original data.</p>
+  <p>So you can count distinct items across a whole fleet: each server keeps its own HLL over local traffic, and at the end you merge them all with bucket-wise max to get the cluster-wide distinct count — having shipped only ~12 KB per server instead of raw data. It's the same "small mergeable summary" theme as Merkle trees and Bloom-filter key summaries.</p>
+
+  <h2><span class="num">07</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Cardinality</dt>
+      <dd>The count of <em>distinct</em> elements — the quantity HLL estimates.
+      <span class="so-what">Why it matters: it's a different question from membership (Bloom) or frequency — "how many uniques," not "is X here" or "how often X."</span></dd>
+    </div>
+    <div class="term">
+      <dt>Register <span class="pron">(bucket)</span></dt>
+      <dd>One of the m small counters, each holding the max leading-zero count for the items whose hash prefix routes to it.
+      <span class="so-what">Why it matters: many registers = many independent estimators, which is what tames the huge variance of a single one.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Leading-zero count <span class="pron">(rank ρ)</span></dt>
+      <dd>The position of the leftmost 1-bit in a hash's tail — the "rare pattern" signal.
+      <span class="so-what">Why it matters: a max of k across items implies ~2^k distinct items; it's the raw estimator the whole method rests on.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Harmonic mean</dt>
+      <dd>The averaging method HLL uses to combine registers, chosen because it suppresses large outliers.
+      <span class="so-what">Why it matters: it's the "Hyper" upgrade over LogLog's plain average — the single change that made the estimate accurate.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Standard error <span class="pron">(1.04/√m)</span></dt>
+      <dd>The accuracy as a function of bucket count m.
+      <span class="so-what">Why it matters: it's the exact dial — pick your error target, and it tells you how many buckets (hence how much memory) you need.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Mergeability</dt>
+      <dd>Two sketches combine by element-wise max of registers, yielding the union's cardinality.
+      <span class="so-what">Why it matters: it makes HLL distributed-friendly — count across a cluster by shipping tiny sketches, not data.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">08</span>Where it's used</h2>
+  <table>
+    <tr><th>System</th><th>How it uses the idea</th></tr>
+    <tr><td>Redis</td><td><code>PFADD</code> / <code>PFCOUNT</code> / <code>PFMERGE</code> — the "PF" honors Philippe Flajolet, HLL's inventor. ~12 KB per key.</td></tr>
+    <tr><td>Presto / Trino, BigQuery</td><td><code>APPROX_DISTINCT</code> / approximate <code>COUNT(DISTINCT)</code> over huge tables without the memory of exact counting.</td></tr>
+    <tr><td>Redshift / Snowflake</td><td>Approximate distinct-count functions for analytics at scale.</td></tr>
+    <tr><td>Network &amp; analytics</td><td>Unique-IP / unique-user counting over firehose streams, and cluster-wide merges of per-node sketches.</td></tr>
+  </table>
+
+  <h2><span class="num">09</span>Common confusions</h2>
+  <div class="pitfall"><strong>It counts distinct items, not volume or frequency.</strong> "How many unique visitors" — yes. "How many times did visitor A come" — it has no idea.</div>
+  <div class="pitfall"><strong>It is not a membership structure.</strong> Unlike a Bloom filter, it can't tell you whether a <em>specific</em> item was seen — only the count of distinct items. Bloom = "is X in the set?"; HLL = "how big is the set?"</div>
+  <div class="pitfall"><strong>You can't recover the elements.</strong> It keeps summary registers, not items — nothing to list or read back.</div>
+  <div class="pitfall"><strong>It's approximate by design.</strong> Need the exact distinct count? Use a real hash set and pay the memory. HLL is for when ~1% error is fine and memory matters.</div>
+  <div class="pitfall"><strong>Weakest at tiny cardinalities.</strong> The leading-zeros trick misbehaves when little has been seen — real implementations switch to linear counting at the low end.</div>
+
+  <h2><span class="num">10</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">HyperLogLog estimates distinct-item counts in tiny fixed memory by hashing each item, tracking the maximum leading-zero count across many buckets, and fusing them with a bias-corrected harmonic mean — turning "the rarest pattern I've seen implies how many things I've seen" into a mergeable, ~1%-accurate cardinality counter.</p>
+
+  <div class="footer-note">day 9 / hyperloglog · previously: consistent hashing, bloom filters, merkle trees, write-ahead logging, lsm trees, union-find, raft, skip lists</div>
+
+</div>
+<script src="topics.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

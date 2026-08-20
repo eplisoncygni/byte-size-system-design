@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Day 7 · Raft Consensus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="nav.css">
+<style>
+  /* page-specific: raft */
+  .invariant {
+    background: var(--card);
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 22px 0;
+    text-align: center;
+    font-family: 'Fraunces', serif;
+    font-size: 20px;
+  }
+  .invariant .small {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .srv       { fill: #e9e1f5; stroke: #6a4fa3; stroke-width: 1.5; }
+  .srv-lead  { fill: #f6dca6; stroke: #b4541e; stroke-width: 2; }
+  .srv-dead  { fill: #eceae6; stroke: #bcb6aa; stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .slabel    { font-family: 'JetBrains Mono', monospace; font-size: 13px; fill: #2b2722; }
+  .slabel-sm { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #6f675c; }
+  .beat      { stroke: #b4541e; stroke-width: 1.5; fill: none; }
+  .beat-soft { stroke: #9aa39a; stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+  .split     { stroke: #b4541e; stroke-width: 2.5; stroke-dasharray: 7 6; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 7</div>
+  <h1>Consensus &amp; Raft</h1>
+  <p class="lede">How a group of servers agree on one ordered log — and keep agreeing through crashes and network splits — by electing a temporary leader and committing only what a majority has stored.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>One machine can keep a durable, ordered log (that's Day 4's WAL). But real systems run several copies for fault tolerance — and the instant you have many machines, a hard question appears: <strong>how do they agree on a single sequence of events when any server can crash, and the network can drop, delay, or reorder messages at the worst possible moment?</strong></p>
+  <p>The goal is a <strong>replicated state machine</strong>: several servers each holding the same log, applying the same operations in the same order, ending in identical states. Achieve that and the servers are interchangeable — any can serve, and if some die the rest carry on with no data loss. So the whole problem reduces to: <em>get a majority of servers to agree on an ordered log, and keep agreeing as servers fail and recover.</em></p>
+  <div class="analogy">
+    <strong>Analogy:</strong> a committee writing one shared minute-book with no chairperson-for-life and unreliable phone lines. They elect a temporary secretary who proposes each line. A line is only "official" once a <em>majority</em> of members have copied it into their own books — so even if the secretary vanishes or a few members are unreachable, the official record survives and no two factions can write conflicting official versions.
+  </div>
+
+  <h2><span class="num">02</span>The load-bearing idea — majority quorums</h2>
+  <p>Raft uses an odd-sized cluster (typically 3 or 5) and requires every important decision to be approved by a <strong>majority</strong> (2 of 3, 3 of 5). The property that makes everything work:</p>
+  <div class="invariant">
+    <span class="small">the overlap principle</span>
+    Any two majorities of the same cluster share at least one server.
+  </div>
+  <p>That guaranteed overlap is what prevents contradictions. If one majority committed something, any <em>future</em> majority contains at least one server that witnessed it — so the past can't be silently erased. It's also why a 5-node cluster tolerates 2 failures (3 survive = still a majority) and why even sizes are wasteful: 4 nodes tolerate only 1 failure, same as 3, at higher cost.</p>
+
+  <h2><span class="num">03</span>Sub-problem 1 — leader election</h2>
+  <p>At any moment one server is the <strong>leader</strong>; the rest are <strong>followers</strong>. All writes flow through the leader, so there's a single authority on log order. Time is divided into numbered <strong>terms</strong>, each with at most one leader.</p>
+  <div class="steps">
+    <div class="step"><div class="body">The leader sends periodic <strong>heartbeats</strong> to followers.</div></div>
+    <div class="step"><div class="body">A follower that hears nothing for a <strong>randomized timeout</strong> assumes the leader died, increments the term, becomes a <strong>candidate</strong>, and requests votes.</div></div>
+    <div class="step"><div class="body">Each server votes at most once per term. A candidate that wins a <strong>majority</strong> of votes becomes leader.</div></div>
+    <div class="step"><div class="body">Randomized timeouts make simultaneous candidacies unlikely; if a vote <em>does</em> split, the next round's random timeouts break the tie.</div></div>
+  </div>
+
+  <figure>
+    <svg width="560" height="240" viewBox="0 0 560 240" role="img" aria-label="One leader sending heartbeats to four followers">
+      <defs>
+        <marker id="hb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M1 1 L9 5 L1 9" fill="none" stroke="#b4541e" stroke-width="1.5" stroke-linecap="round"/>
+        </marker>
+      </defs>
+      <line class="beat" x1="280" y1="70" x2="130" y2="150" marker-end="url(#hb)"/>
+      <line class="beat" x1="280" y1="70" x2="230" y2="165" marker-end="url(#hb)"/>
+      <line class="beat" x1="280" y1="70" x2="330" y2="165" marker-end="url(#hb)"/>
+      <line class="beat" x1="280" y1="70" x2="430" y2="150" marker-end="url(#hb)"/>
+
+      <circle class="srv-lead" cx="280" cy="50" r="26"/>
+      <text class="slabel" x="280" y="47" text-anchor="middle">LEADER</text>
+      <text class="slabel-sm" x="280" y="61" text-anchor="middle">term 4</text>
+
+      <circle class="srv" cx="110" cy="170" r="24"/><text class="slabel" x="110" y="175" text-anchor="middle">F</text>
+      <circle class="srv" cx="215" cy="185" r="24"/><text class="slabel" x="215" y="190" text-anchor="middle">F</text>
+      <circle class="srv" cx="345" cy="185" r="24"/><text class="slabel" x="345" y="190" text-anchor="middle">F</text>
+      <circle class="srv" cx="450" cy="170" r="24"/><text class="slabel" x="450" y="175" text-anchor="middle">F</text>
+
+      <text class="slabel-sm" x="280" y="225" text-anchor="middle">heartbeats reset each follower's election timer — silence triggers a new election</text>
+    </svg>
+    <figcaption>One leader, many followers. Heartbeats say "I'm still alive"; their absence starts an election.</figcaption>
+  </figure>
+
+  <h2><span class="num">04</span>Sub-problem 2 — log replication</h2>
+  <p>The elected leader accepts client commands, appends each to its own log (order fixed here — it's Day 4's WAL, now with an audience), and sends <code>AppendEntries</code> messages so followers append the same entry in the same slot. The commitment rule is the crux:</p>
+  <div class="invariant">
+    <span class="small">commit rule</span>
+    An entry is <em>committed</em> only once the leader <em>and a majority of followers</em> have stored it.
+  </div>
+  <p>Only then is the entry applied to the state machine and considered permanent. If a follower's log has diverged — missed entries, or stale ones from a dead leader — the leader detects the mismatch and overwrites the follower's log to match its own. <strong>The leader's log is the source of truth; followers conform to it.</strong></p>
+
+  <h2><span class="num">05</span>Sub-problem 3 — safety</h2>
+  <p>Election and replication alone aren't enough; you need a guard so a new leader can't erase already-committed data. The key rule is the <strong>election restriction</strong>:</p>
+  <div class="invariant">
+    <span class="small">election restriction</span>
+    A candidate can only win if its log is at least as up-to-date as the majority that votes for it.
+  </div>
+  <p>Because any electing majority overlaps with the majority that committed the last entry, that shared server guarantees the winning candidate already <em>holds</em> every committed entry. Committed data therefore survives every leader change — Raft structurally refuses to elect a leader who is missing it.</p>
+
+  <h2><span class="num">06</span>The split-brain test — a network partition</h2>
+  <p>Split a 5-node cluster into groups of 3 and 2:</p>
+  <figure>
+    <svg width="560" height="250" viewBox="0 0 560 250" role="img" aria-label="A five node cluster partitioned into a majority of three and a minority of two">
+      <line class="split" x1="360" y1="20" x2="360" y2="230"/>
+
+      <text class="slabel-sm" x="180" y="28" text-anchor="middle" fill="#1d6f5c">majority side — 3 servers</text>
+      <circle class="srv-lead" cx="110" cy="90" r="26"/><text class="slabel" x="110" y="87" text-anchor="middle">LEADER</text><text class="slabel-sm" x="110" y="101" text-anchor="middle">term 6</text>
+      <circle class="srv" cx="230" cy="70" r="24"/><text class="slabel" x="230" y="75" text-anchor="middle">F</text>
+      <circle class="srv" cx="205" cy="160" r="24"/><text class="slabel" x="205" y="165" text-anchor="middle">F</text>
+      <text class="slabel-sm" x="180" y="215" text-anchor="middle">has 3 of 5 → elects a leader,</text>
+      <text class="slabel-sm" x="180" y="231" text-anchor="middle">keeps committing normally</text>
+
+      <text class="slabel-sm" x="460" y="28" text-anchor="middle" fill="#b4541e">minority side — 2 servers</text>
+      <circle class="srv" cx="430" cy="90" r="24"/><text class="slabel" x="430" y="95" text-anchor="middle">C?</text>
+      <circle class="srv" cx="510" cy="140" r="24"/><text class="slabel" x="510" y="145" text-anchor="middle">C?</text>
+      <text class="slabel-sm" x="470" y="200" text-anchor="middle">only 2 of 5 → can never reach 3 votes,</text>
+      <text class="slabel-sm" x="470" y="216" text-anchor="middle">elects nobody, commits nothing, stalls</text>
+    </svg>
+    <figcaption>The majority side stays fully operational. The minority side cannot elect a leader or commit — it simply waits.</figcaption>
+  </figure>
+  <p>The 3-side has a majority: it elects a leader and keeps committing. The 2-side can never gather 3 votes, so it elects nobody and commits nothing — it just times out repeatedly. When the partition heals, the stalled minority sees a higher term, steps down, and syncs to the majority's log. <strong>There is never a moment where both halves commit conflicting entries.</strong> Raft chooses consistency over availability: the minority goes dark rather than risk divergence (the CP corner of CAP).</p>
+
+  <h2><span class="num">07</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Replicated state machine</dt>
+      <dd>Multiple servers applying the same ordered log of operations, so all reach identical state.
+      <span class="so-what">Why it matters: it's the goal. Agreement on the log <em>is</em> the whole point — identical logs mean interchangeable servers.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Term</dt>
+      <dd>A numbered epoch of time with at most one leader. Terms increase monotonically.
+      <span class="so-what">Why it matters: terms are Raft's logical clock — a higher term always wins, which is how stale leaders detect they've been replaced.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Leader / follower / candidate</dt>
+      <dd>The three roles. One leader per term handles all writes; followers replicate; a candidate is a follower campaigning for votes.
+      <span class="so-what">Why it matters: funneling writes through one leader gives a single authority on order — no per-entry negotiation.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Quorum / majority</dt>
+      <dd>More than half of <em>all configured</em> servers. Required for both election and commit.
+      <span class="so-what">Why it matters: two majorities always overlap, which is the single fact that makes consensus safe.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Committed entry</dt>
+      <dd>A log entry stored on a majority — now permanent and safe to apply.
+      <span class="so-what">Why it matters: "on the leader" isn't enough; the majority-ack is exactly what makes an entry survive the leader's death.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Election restriction</dt>
+      <dd>Voters reject candidates whose logs are less up-to-date than their own.
+      <span class="so-what">Why it matters: it's the guard that stops a new leader from erasing committed history.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">08</span>Where it's used</h2>
+  <table>
+    <tr><th>System</th><th>How it uses the idea</th></tr>
+    <tr><td>etcd (Kubernetes)</td><td>Every k8s cluster stores its state in etcd, which uses Raft — so you run Raft daily without seeing it.</td></tr>
+    <tr><td>Consul / Nomad</td><td>HashiCorp's service discovery and scheduler replicate their state via Raft.</td></tr>
+    <tr><td>CockroachDB / TiKV</td><td>Data is sharded into ranges; each range is its own Raft group for scalable, consistent replication.</td></tr>
+    <tr><td>Kafka (KRaft mode)</td><td>Replaced the ZooKeeper dependency with built-in Raft for metadata consensus.</td></tr>
+    <tr><td>Paxos (the ancestor)</td><td>The older, correct-but-hard-to-follow algorithm Raft was designed to replace for understandability.</td></tr>
+  </table>
+
+  <h2><span class="num">09</span>Common confusions</h2>
+  <div class="pitfall"><strong>The leader is a lease, not a title.</strong> Any server can hold it; it's re-elected freely whenever the current one falters. There's no permanent master.</div>
+  <div class="pitfall"><strong>Majority means of <em>all configured</em> servers, not the reachable ones.</strong> Lose too many and the cluster correctly refuses to progress — unavailability is the safe failure, not a bug.</div>
+  <div class="pitfall"><strong>Committed ≠ written to the leader.</strong> An entry only on the leader can still be lost if it dies; the majority acknowledgement is what makes it durable.</div>
+  <div class="pitfall"><strong>Raft gives one agreed log, not throughput.</strong> It's a coordination primitive capped by the majority round-trip — which is why systems run many small Raft groups rather than one big one.</div>
+
+  <h2><span class="num">10</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">Raft keeps a cluster agreeing on one ordered log by electing a temporary leader through majority vote, committing an entry only once a majority has stored it, and refusing to elect any leader missing committed data — staying consistent through crashes and splits, unavailable only when no majority survives.</p>
+
+  <div class="footer-note">day 7 / raft consensus · previously: consistent hashing, bloom filters, merkle trees, write-ahead logging, lsm trees, union-find</div>
+
+</div>
+<script src="topics.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

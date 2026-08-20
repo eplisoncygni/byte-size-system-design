@@ -3,22 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Skip Lists</title>
+<title>Day 8 · Skip Lists</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/base.css">
-  <style>
-  /* page-specific styles */
-  /* diagram styles */
-    .sl-node   { fill: #e9e1f5; stroke: #6a4fa3; stroke-width: 1.4; }
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="nav.css">
+<style>
+  /* page-specific: skip lists */
+  .sl-node   { fill: #e9e1f5; stroke: #6a4fa3; stroke-width: 1.4; }
   .sl-target { fill: #f6dca6; stroke: #b4541e; stroke-width: 2; }
   .sl-head   { fill: #e0efe9; stroke: #1d6f5c; stroke-width: 1.4; }
   .sl-label  { font-family: 'JetBrains Mono', monospace; font-size: 13px; fill: #2b2722; }
   .sl-lvl    { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #6f675c; }
   .sl-link   { stroke: #9aa39a; stroke-width: 1.4; fill: none; }
   .sl-path   { stroke: #b4541e; stroke-width: 2.4; fill: none; }
-  </style>
-<link rel="stylesheet" href="assets/nav.css">
+</style>
 </head>
 <body>
 <div class="page">
@@ -49,13 +48,10 @@
 
   <figure>
     <svg width="640" height="260" viewBox="0 0 660 260" role="img" aria-label="A skip list with three levels and the search path to value 46">
-      <!-- level y positions: L2=50, L1=120, L0=190 -->
       <text class="sl-lvl" x="20" y="54" text-anchor="start">L2</text>
       <text class="sl-lvl" x="20" y="124" text-anchor="start">L1</text>
       <text class="sl-lvl" x="20" y="194" text-anchor="start">L0</text>
 
-      <!-- node x positions: head=60, 12=140, 25=230, 31=320, 46=410, 58=500, 70=590 -->
-      <!-- LEVEL 0 links (all nodes) -->
       <line class="sl-link" x1="72" y1="190" x2="128" y2="190"/>
       <line class="sl-link" x1="152" y1="190" x2="218" y2="190"/>
       <line class="sl-link" x1="242" y1="190" x2="308" y2="190"/>
@@ -63,41 +59,30 @@
       <line class="sl-link" x1="422" y1="190" x2="488" y2="190"/>
       <line class="sl-link" x1="512" y1="190" x2="578" y2="190"/>
 
-      <!-- LEVEL 1 links (12, 31, 58) -->
       <line class="sl-link" x1="72" y1="120" x2="128" y2="120"/>
       <line class="sl-link" x1="152" y1="120" x2="308" y2="120"/>
       <line class="sl-link" x1="332" y1="120" x2="488" y2="120"/>
 
-      <!-- LEVEL 2 links (31 only) -->
       <line class="sl-link" x1="72" y1="50" x2="308" y2="50"/>
 
-      <!-- SEARCH PATH for 46: head L2 -> right to 31(L2) overshoot? next is null-ish, drop; 31 L1 -> right would be 58 (overshoot), drop; 31 L0 -> right to 46 -->
       <path class="sl-path" d="M60 50 L320 50"/>
       <path class="sl-path" d="M320 50 L320 120"/>
       <path class="sl-path" d="M320 120 L320 190"/>
       <path class="sl-path" d="M320 190 L410 190"/>
 
-      <!-- head node (tall) -->
       <rect class="sl-head" x="46" y="38" width="26" height="164" rx="5"/>
       <text class="sl-label" x="59" y="215" text-anchor="middle">HEAD</text>
 
-      <!-- towers -->
-      <!-- 12: L0,L1 -->
       <rect class="sl-node" x="128" y="108" width="26" height="94" rx="5"/>
       <text class="sl-label" x="141" y="215" text-anchor="middle">12</text>
-      <!-- 25: L0 -->
       <rect class="sl-node" x="218" y="178" width="26" height="24" rx="5"/>
       <text class="sl-label" x="231" y="215" text-anchor="middle">25</text>
-      <!-- 31: L0,L1,L2 -->
       <rect class="sl-node" x="308" y="38" width="26" height="164" rx="5"/>
       <text class="sl-label" x="321" y="215" text-anchor="middle">31</text>
-      <!-- 46: L0 (target) -->
       <rect class="sl-target" x="398" y="178" width="26" height="24" rx="5"/>
       <text class="sl-label" x="411" y="215" text-anchor="middle">46</text>
-      <!-- 58: L0,L1 -->
       <rect class="sl-node" x="488" y="108" width="26" height="94" rx="5"/>
       <text class="sl-label" x="501" y="215" text-anchor="middle">58</text>
-      <!-- 70: L0 -->
       <rect class="sl-node" x="578" y="178" width="26" height="24" rx="5"/>
       <text class="sl-label" x="591" y="215" text-anchor="middle">70</text>
 
@@ -177,10 +162,10 @@
   <h2><span class="num">10</span>One-sentence summary</h2>
   <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">A skip list is a stack of sorted linked lists where each higher level is a random, sparser express lane — giving expected O(log n) search, insert, and delete through simple local splices and coin-flip balancing instead of rotations, which is why it powers Redis sorted sets, LSM memtables, and concurrent ordered maps.</p>
 
-  <div class="footer-note">day 8 / skip lists · previously: consistent hashing, bloom filters, merkle trees, write-ahead logging, lsm trees, union-find, raft · next up: say "today's topic" tomorrow</div>
+  <div class="footer-note">day 8 / skip lists · previously: consistent hashing, bloom filters, merkle trees, write-ahead logging, lsm trees, union-find, raft</div>
 
 </div>
-<script src="assets/topics.js"></script>
-<script src="assets/nav.js"></script>
+<script src="topics.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>

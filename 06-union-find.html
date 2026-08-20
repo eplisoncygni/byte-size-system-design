@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Day 6 · Union-Find</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="nav.css">
+<style>
+  /* page-specific: union-find */
+  .codecard {
+    background: #2b2722;
+    color: #f3ede1;
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 18px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+  .codecard .cm { color: #b59a78; }
+  .codecard .kw { color: #e8a13c; }
+
+  .nd      { fill: #e9e1f5; stroke: #6a4fa3; stroke-width: 1.5; }
+  .nd-root { fill: #f6dca6; stroke: #b4541e; stroke-width: 1.5; }
+  .nlabel  { font-family: 'JetBrains Mono', monospace; font-size: 14px; fill: #2b2722; }
+  .elabel  { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #6f675c; }
+  .ptr     { stroke: #9aa39a; stroke-width: 1.5; fill: none; }
+  .ptr-new { stroke: #b4541e; stroke-width: 2; fill: none; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="kicker">Daily deep-dive · Day 6</div>
+  <h1>Union-Find</h1>
+  <p class="lede">A tiny structure that keeps a collection of groups, merges any two in one pointer change, and answers "same group?" in effectively constant time — the algorithm that heals itself as you use it.</p>
+
+  <hr class="divider">
+
+  <h2><span class="num">01</span>The problem, in plain words</h2>
+  <p>You have a pile of elements and you keep being told <em>"these two belong together."</em> You must answer, over and over and fast: <strong>"are these two in the same group?"</strong> — while groups keep merging. As friendships form, are A and B in the same cluster? As edges are added to a graph, are these two nodes now connected? Two operations — <strong>merge two groups</strong> and <strong>test if two elements share a group</strong> — have to stay cheap with millions of elements and queries.</p>
+  <div class="analogy">
+    <strong>Analogy:</strong> island nations connected by new bridges. Each island only needs to know which <em>capital</em> it reports to. To check if two islands are in the same country, ask each "what's your capital?" and compare. To merge two countries when a bridge is built, you don't renumber every island — you just declare one capital now reports to the other. Everyone's allegiance is found by following the chain of command up to the top capital.
+  </div>
+
+  <h2><span class="num">02</span>The core idea — a forest of parent pointers</h2>
+  <p>Every element points to a <strong>parent</strong>. Follow parents upward and you reach a <strong>root</strong> — an element that points to itself. The root <em>is</em> the group's identity. Two elements are in the same group exactly when they reach the same root.</p>
+  <div class="steps">
+    <div class="step"><div class="body"><code>find(x)</code> — walk parent pointers from <code>x</code> up to its root, and return that root.</div></div>
+    <div class="step"><div class="body"><code>union(x, y)</code> — find both roots; if they differ, point one root at the other. <strong>Merging two whole groups is a single pointer change</strong> — no member is touched.</div></div>
+  </div>
+
+  <figure>
+    <svg width="560" height="220" viewBox="0 0 560 220" role="img" aria-label="Two parent-pointer trees merging by pointing one root at the other">
+      <line class="ptr" x1="108" y1="70" x2="78" y2="120"/>
+      <line class="ptr" x1="116" y1="70" x2="146" y2="120"/>
+      <circle class="nd-root" cx="112" cy="52" r="20"/><text class="nlabel" x="112" y="57" text-anchor="middle">A</text>
+      <circle class="nd" cx="70" cy="138" r="20"/><text class="nlabel" x="70" y="143" text-anchor="middle">B</text>
+      <circle class="nd" cx="154" cy="138" r="20"/><text class="nlabel" x="154" y="143" text-anchor="middle">C</text>
+      <text class="elabel" x="112" y="186" text-anchor="middle">root: A</text>
+
+      <line class="ptr" x1="410" y1="70" x2="410" y2="120"/>
+      <circle class="nd-root" cx="410" cy="52" r="20"/><text class="nlabel" x="410" y="57" text-anchor="middle">D</text>
+      <circle class="nd" cx="410" cy="138" r="20"/><text class="nlabel" x="410" y="143" text-anchor="middle">E</text>
+      <text class="elabel" x="410" y="186" text-anchor="middle">root: D</text>
+
+      <path class="ptr-new" d="M390 44 C 300 10, 200 10, 132 40" marker-end="url(#ar)"/>
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M1 1 L9 5 L1 9" fill="none" stroke="#b4541e" stroke-width="1.6" stroke-linecap="round"/>
+        </marker>
+      </defs>
+      <text class="elabel" x="270" y="14" text-anchor="middle" fill="#b4541e">union(C, E): root D now points to root A</text>
+    </svg>
+    <figcaption>Two trees become one with a single pointer: D is hooked under A. B, C, E are never visited.</figcaption>
+  </figure>
+
+  <h2><span class="num">03</span>The catch, and the two optimizations</h2>
+  <p>Naively, these trees can grow tall and stringy — a long chain — and then <code>find</code> degrades to an O(n) walk. Two optimizations fix that, and together they make the structure famous.</p>
+
+  <p><strong>1. Union by rank / size.</strong> When merging, always attach the <em>shorter</em> tree under the <em>taller</em> one (or smaller under larger). A tree only deepens when two equal-height trees merge, so height stays logarithmic. This alone bounds <code>find</code> at O(log n).</p>
+
+  <p><strong>2. Path compression.</strong> During <code>find(x)</code>, after reaching the root, point <em>every node on the path</em> straight at the root. You flatten the path as a side effect of the query — so next time, each of those nodes is one hop away.</p>
+
+  <figure>
+    <svg width="560" height="210" viewBox="0 0 560 210" role="img" aria-label="Path compression flattening a chain so every node points directly at the root">
+      <text class="elabel" x="120" y="20" text-anchor="middle">before — a stringy chain</text>
+      <line class="ptr" x1="120" y1="58" x2="120" y2="74"/>
+      <line class="ptr" x1="120" y1="110" x2="120" y2="134"/>
+      <circle class="nd-root" cx="120" cy="40" r="18"/><text class="nlabel" x="120" y="45" text-anchor="middle">R</text>
+      <circle class="nd" cx="120" cy="92" r="18"/><text class="nlabel" x="120" y="97" text-anchor="middle">p</text>
+      <circle class="nd" cx="120" cy="152" r="18"/><text class="nlabel" x="120" y="157" text-anchor="middle">q</text>
+
+      <text class="nlabel" x="280" y="100" text-anchor="middle" fill="#b4541e">find(q) ⟶</text>
+
+      <text class="elabel" x="440" y="20" text-anchor="middle">after — path flattened</text>
+      <line class="ptr-new" x1="420" y1="52" x2="392" y2="92"/>
+      <line class="ptr-new" x1="440" y1="52" x2="452" y2="92"/>
+      <circle class="nd-root" cx="430" cy="40" r="18"/><text class="nlabel" x="430" y="45" text-anchor="middle">R</text>
+      <circle class="nd" cx="384" cy="108" r="18"/><text class="nlabel" x="384" y="113" text-anchor="middle">p</text>
+      <circle class="nd" cx="460" cy="108" r="18"/><text class="nlabel" x="460" y="113" text-anchor="middle">q</text>
+      <text class="elabel" x="430" y="150" text-anchor="middle">every visited node now points straight at R</text>
+    </svg>
+    <figcaption>Querying a node repays the cost by shortening the path for every future query.</figcaption>
+  </figure>
+
+  <p>That self-healing is the elegant part: <strong>every query makes the structure faster for the queries that follow.</strong></p>
+
+  <h2><span class="num">04</span>The payoff</h2>
+  <p>With both optimizations, the amortized cost per operation is <code>O(α(n))</code>, where α is the <em>inverse Ackermann function</em>. You only need one fact about α: it grows so unimaginably slowly that for any <code>n</code> that could physically exist — more than the atoms in the observable universe — <code>α(n) ≤ 4</code>. So each operation is <strong>effectively constant time</strong>, and Tarjan's proof of this bound is a celebrated result in algorithm analysis. A near-O(1) merge-and-query structure, from two one-line tweaks.</p>
+
+  <div class="codecard">
+<span class="cm"># the entire structure</span>
+parent = list(range(n))      <span class="cm"># each element starts as its own root</span>
+size   = [1] * n
+
+<span class="kw">def</span> find(x):
+    <span class="kw">while</span> parent[x] != x:
+        parent[x] = parent[parent[x]]   <span class="cm"># path halving</span>
+        x = parent[x]
+    <span class="kw">return</span> x
+
+<span class="kw">def</span> union(a, b):
+    ra, rb = find(a), find(b)
+    <span class="kw">if</span> ra == rb: <span class="kw">return</span>
+    <span class="kw">if</span> size[ra] &lt; size[rb]: ra, rb = rb, ra   <span class="cm"># attach smaller under larger</span>
+    parent[rb] = ra
+    size[ra] += size[rb]
+  </div>
+
+  <h2><span class="num">05</span>Key terminology</h2>
+  <dl class="term-grid">
+    <div class="term">
+      <dt>Disjoint sets <span class="pron">(partition)</span></dt>
+      <dd>The groups never overlap; every element is in exactly one set. The structure maintains a partition of all elements.
+      <span class="so-what">Why it matters: "exactly one set" is what makes the root a clean identity — there's never ambiguity about which group an element is in.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Representative <span class="pron">(root)</span></dt>
+      <dd>The canonical element identifying a set — the one that points to itself.
+      <span class="so-what">Why it matters: it's just an identity token. Which element is root is arbitrary and shifts as you union, so only ever ask "same root?", never attach meaning to the root itself.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Union by rank / size</dt>
+      <dd>Attach the shorter/smaller tree under the taller/larger one when merging.
+      <span class="so-what">Why it matters: without it, trees can grow into O(n) chains. This caps height at O(log n) on its own.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Path compression</dt>
+      <dd>On <code>find</code>, repoint every node on the path directly to the root. Lighter variants — <em>path halving</em>, <em>path splitting</em> — compress less but need only one pass.
+      <span class="so-what">Why it matters: it's what turns repeated queries cheap, and combined with union-by-rank gives the inverse-Ackermann bound.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Amortized complexity</dt>
+      <dd>The cost is per operation <em>averaged over a sequence</em>. A single <code>find</code> may be longish, but it flattens the path and pays forward.
+      <span class="so-what">Why it matters: the O(α(n)) bound is an average over many operations, not a worst-case guarantee for one — the right lens for self-optimizing structures.</span></dd>
+    </div>
+    <div class="term">
+      <dt>Inverse Ackermann α(n)</dt>
+      <dd>The almost-constant function in the complexity bound; ≤ 4 for all practical <code>n</code>.
+      <span class="so-what">Why it matters: it's why people just say Union-Find is "effectively O(1)" in practice.</span></dd>
+    </div>
+  </dl>
+
+  <h2><span class="num">06</span>Where it's used</h2>
+  <table>
+    <tr><th>System / problem</th><th>How it uses the idea</th></tr>
+    <tr><td>Kruskal's MST</td><td>Process edges cheapest-first; add an edge only if its endpoints aren't already connected (<code>find</code>), then <code>union</code>. The canonical use.</td></tr>
+    <tr><td>Connected components</td><td>Union every edge; afterward, "connected?" is a root comparison. Handles edges arriving dynamically.</td></tr>
+    <tr><td>Cycle detection (undirected)</td><td>An edge whose endpoints already share a root would close a cycle.</td></tr>
+    <tr><td>Image processing</td><td>Connected-component labeling — grouping adjacent pixels into blobs/regions.</td></tr>
+    <tr><td>Percolation &amp; mazes</td><td>Grid-connectivity simulations; randomized maze generation (a Kruskal variant).</td></tr>
+    <tr><td>Compilers</td><td>Type unification and expression-equivalence checking.</td></tr>
+  </table>
+
+  <h2><span class="num">07</span>Common confusions</h2>
+  <div class="pitfall"><strong>It's merge-only.</strong> The basic structure can union sets but can't efficiently split one or undo a union — a one-way ratchet. Rollback/persistent variants exist at extra cost.</div>
+  <div class="pitfall"><strong>"Connected," not "adjacent."</strong> It answers transitive grouping (are these in the same component?), not whether there's a direct edge between two elements. It tracks equivalence classes, not the graph's links.</div>
+  <div class="pitfall"><strong>Compression changes shape, not membership.</strong> Flattening the trees is purely a speed optimization — the partition it represents is identical before and after.</div>
+  <div class="pitfall"><strong>It's for equivalence, not direction.</strong> "Same group" is symmetric. Union-Find doesn't model directed reachability (A→B but maybe not B→A).</div>
+
+  <h2><span class="num">08</span>One-sentence summary</h2>
+  <p style="font-family:'Fraunces',serif; font-size:23px; line-height:1.45;">Union-Find keeps disjoint sets as a forest of parent-pointer trees, so merging two sets is one pointer change and testing membership is a walk to the root — and with union-by-rank plus path compression, both run in effectively constant amortized time.</p>
+
+  <div class="footer-note">day 6 / union-find · previously: consistent hashing, bloom filters, merkle trees, write-ahead logging, lsm trees</div>
+
+</div>
+<script src="topics.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>
