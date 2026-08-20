@@ -123,6 +123,9 @@
   .step .body strong { font-weight: 600; }
 
   figure { margin: 28px 0; text-align: center; }
+  /* Diagrams are authored at a fixed width but all carry a viewBox, so
+     letting them scale keeps every SVG inside the column on phones. */
+  figure svg { max-width: 100%; height: auto; }
   figcaption {
     font-size: 15px;
     color: var(--muted);
