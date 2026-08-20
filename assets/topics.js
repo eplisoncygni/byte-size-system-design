@@ -18,6 +18,10 @@ window.SITE = {
   name: "Byte-Size System Design",
   base: "https://eplisoncygni.github.io/byte-size-system-design",
   tagline: "One surprise topic a day — data structures, storage internals, and distributed-systems primitives.",
+  repo: "https://github.com/eplisoncygni/byte-size-system-design",
+  author: "Nirajan Kharal",
+  license: "MIT",
+  since: 2026,
 };
 
 window.TOPICS = [
@@ -39,4 +43,6 @@ window.TOPICS = [
     blurb: "A stack of sorted linked lists where each level is a sparser express lane — balanced-tree speed from coin flips instead of rotations." },
   { day: 9, slug: "09-hyperloglog",         title: "HyperLogLog",
     blurb: "Count distinct items in a billions-strong stream with about 12 KB of memory: the rarest bit pattern you have seen tells you how much you have seen." },
+  { day: 10, slug: "10-count-min-sketch",   title: "Count-Min Sketch",
+    blurb: "Estimate how often each item appears in an endless stream from a tiny fixed grid of counters — collisions can only inflate a count, so it never under-reports." },
 ];

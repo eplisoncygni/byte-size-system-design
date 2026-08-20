@@ -44,4 +44,25 @@
     "</div>";
 
   document.body.insertBefore(nav, document.body.firstChild);
+
+  /* ── Arrow-key paging ──
+     The docs are read in order, so left/right walk the series. Ignored
+     while typing, when a modifier is held (so browser/OS shortcuts such
+     as alt+arrow for history still work), and at the ends of the run. */
+  function isTyping(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    return /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (isTyping(e.target)) return;
+
+    var to = e.key === "ArrowLeft" ? prev : e.key === "ArrowRight" ? next : null;
+    if (!to) return;
+
+    e.preventDefault();
+    location.href = to.slug + ".html";
+  });
 })();

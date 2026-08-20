@@ -100,7 +100,33 @@ for (const p of pages) {
   }
   after = after.replace(/<title>[\s\S]*?<\/title>/, wantTitle);
 
-  // 2. replace the generated block, or insert it after the viewport meta
+  // 2. preconnect to the font *file* host - the googleapis preconnect
+  //    only covers the stylesheet, and the woff2s come from gstatic.
+  const GSTATIC = '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
+  if (!after.includes("fonts.gstatic.com")) {
+    const gapi = after.match(/[ \t]*<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com"[^>]*>\n?/);
+    if (gapi) {
+      after = after.replace(gapi[0], gapi[0].replace(/\n?$/, "\n") + GSTATIC + "\n");
+    } else {
+      console.error(`  NO font preconnect  ${p.file} - gstatic hint not added`);
+    }
+  }
+
+  // 3. keep nav.css immediately after base.css, so a page's own inline
+  //    <style> always wins over both instead of only over base.css.
+  const baseLink = after.match(/([ \t]*)<link rel="stylesheet" href="assets\/base\.css">\n?/);
+  const navLink = after.match(/[ \t]*<link rel="stylesheet" href="assets\/nav\.css">\n?/);
+  if (baseLink && navLink) {
+    after = after.replace(navLink[0], "");
+    const fresh = after.match(/([ \t]*)<link rel="stylesheet" href="assets\/base\.css">\n?/);
+    after = after.replace(
+      fresh[0],
+      fresh[0].replace(/\n?$/, "\n") +
+        fresh[1] + '<link rel="stylesheet" href="assets/nav.css">' + "\n"
+    );
+  }
+
+  // 4. replace the generated block, or insert it after the viewport meta
   const gen = block(p);
   if (after.includes(START) && after.includes(END)) {
     after = after.replace(

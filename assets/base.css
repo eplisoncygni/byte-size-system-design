@@ -1,5 +1,7 @@
 /* Shared base styles for every deep-dive doc.
    Page-specific rules (diagrams, one-off cards) stay inline in each doc. */
+/* The one palette for the whole site. nav.css reads these too, so this
+   block is the only place a colour is defined. */
 :root {
     --paper: #faf6ef;
     --ink: #2b2722;
@@ -10,6 +12,11 @@
     --teal: #1d6f5c;
     --teal-soft: #e0efe9;
     --card: #ffffff;
+    --code-bg: #f1ebdf;
+    --disabled: #c4bcae;
+    /* translucent paper, for the sticky nav sitting over scrolling text */
+    --paper-veil: rgba(250, 246, 239, 0.86);
+    --accent-shadow: rgba(180, 84, 30, 0.08);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -59,7 +66,7 @@
   code {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.82em;
-    background: #f1ebdf;
+    background: var(--code-bg);
     padding: 1px 6px;
     border-radius: 4px;
   }

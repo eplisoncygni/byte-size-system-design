@@ -1,0 +1,40 @@
+Byte-Size System Design
+Copyright (c) 2026 Nirajan Kharal
+
+ABOUT THIS REPOSITORY
+
+These write-ups are original prose. They are written from publicly
+documented sources - published papers, official project documentation,
+and the public source code of the systems described - and they explain
+how those algorithms and systems work rather than reproducing anyone
+else's text, figures, or code.
+
+All diagrams in this repository are hand-authored SVG, original to this
+project. No third-party images, embeds, or media files are used.
+
+Code snippets are illustrative. Where they show a well-known algorithm
+(for example path halving in union-find), they are the standard textbook
+formulation of that algorithm, written out here in the plainest form
+that makes the idea clear.
+
+TRADEMARKS
+
+Product and company names mentioned anywhere in this repository -
+including but not limited to Apache Cassandra, RocksDB, LevelDB, Redis,
+Apache Kafka, Apache Spark, Apache HBase, MySQL, SQLite, etcd, and
+Consul - are the trademarks of their respective owners. They are used
+here nominatively, to identify the systems being described. No
+affiliation with or endorsement by any of them is implied.
+
+LICENSE
+
+The MIT License in the LICENSE file applies to this repository. It also
+disclaims warranties and limits liability; see that file for the full
+terms.
+
+FONTS
+
+The site loads Fraunces, Newsreader, and JetBrains Mono from Google
+Fonts. Those families are licensed under the SIL Open Font License 1.1
+by their respective authors and are not redistributed in this
+repository.
